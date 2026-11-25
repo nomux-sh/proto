@@ -44,7 +44,7 @@ Examples:
 | 1 to 3                         | 4 to 5                         | Not compatible |
 | 4 to 5                         | 1 to 3                         | Not compatible |
 
-The function `nomux_proto::compat::negotiate` implements this rule.
+The function `nomux_proto::compatibility::negotiate` implements this rule.
 
 ## When the peers are not compatible
 

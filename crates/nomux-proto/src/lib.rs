@@ -5,15 +5,15 @@
 //! - [`wire::v1`]: the control messages. `prost` generates these types from
 //!   the schemas in `proto/nomux/wire/v1/`.
 //! - [`frame`]: the fixed binary header of a terminal data frame.
-//! - [`compat`]: the control protocol version and the version rule of the
-//!   handshake.
+//! - [`compatibility`]: the control protocol version and the version rule of
+//!   the handshake.
 //!
 //! The generated code is in the repository. A build of this crate does not
 //! start `buf` or `protoc`.
 //!
 //! The protocol is a draft. It can change until ADR-0002 is accepted.
 
-pub mod compat;
+pub mod compatibility;
 pub mod frame;
 
 /// Compiles and runs the example in the crate README as a documentation test.

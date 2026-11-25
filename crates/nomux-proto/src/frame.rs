@@ -55,16 +55,6 @@ pub enum FrameKind {
 }
 
 impl FrameKind {
-    /// All frame kinds, in the order of their byte values.
-    pub const ALL: [Self; 6] = [
-        Self::Output,
-        Self::ScreenSnapshot,
-        Self::ScreenDiff,
-        Self::Ack,
-        Self::Credit,
-        Self::Input,
-    ];
-
     /// Returns the frame kind for a `kind` byte, or `None` if the value is
     /// not registered.
     pub const fn from_u8(value: u8) -> Option<Self> {
@@ -298,7 +288,6 @@ mod tests {
             (FrameKind::Credit, 5),
             (FrameKind::Input, 6),
         ];
-        assert_eq!(expected.map(|(kind, _)| kind), FrameKind::ALL);
         for (kind, byte) in expected {
             assert_eq!(kind.as_u8(), byte);
             assert_eq!(FrameKind::from_u8(byte), Some(kind));

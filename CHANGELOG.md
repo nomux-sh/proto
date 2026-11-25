@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [git-cliff](https://git-cliff.org) writes this file from the commit subjects.
 To see the changes that are not in a version, run `git cliff --unreleased`.
 
+## [0.5.0] - 2026-11-25
+
+### Added
+
+- Add the HistoryGap and Restored frames and their capability flag
+- Add restore, capture and the states of a session with no process
+
+### Documentation
+
+- List the decided questions of the holder protocol
 ## [0.4.0] - 2026-11-25
 
 ### Added

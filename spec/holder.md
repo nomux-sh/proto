@@ -1,6 +1,6 @@
 # Holder protocol
 
-**Status: OUTLINE.** Milestone M1 designs the holder protocol. This document gives the rules that are already decided and the open questions.
+**Status: OUTLINE.** The holder protocol is not designed. This document gives the rules that are already decided and the open questions. The [roadmap](https://github.com/nomux-sh/docs/blob/main/src/content/docs/project/roadmap.md) gives the plan.
 
 ## Purpose
 
@@ -29,7 +29,7 @@ The effects on the design:
 
 ## Known design constraints
 
-These constraints come from the architecture. They are inputs for the M1 design, not a specification.
+These constraints come from the architecture. They are inputs for the design, not a specification.
 
 - **Transport.** A Unix socket carries control messages. A ring buffer of fixed size in shared memory (`memfd`) carries terminal data. The daemon maps the buffer and reads it without a copy.
 - **Discovery.** Each holder has a directory `~/.nomux/run/<id>/` with the files `pid`, `sock`, and `ready`. The `pid` file contains the process ID and the process start time. The holder writes `ready` last.
@@ -38,7 +38,7 @@ These constraints come from the architecture. They are inputs for the M1 design,
 - **No runtime.** The holder has no async runtime. The protocol must be simple to implement with blocking I/O and `poll`.
 - **State.** The holder keeps the smallest copy of the state of its session. When the daemon connects again, the daemon reads this state from the holder.
 
-## Open questions for M1
+## Open questions
 
 1. **Encoding.** Does the control part use protobuf (and thus this repository's schemas), or a smaller fixed binary encoding? The holder must stay small and must be able to decode messages from all later daemon versions of the same major version.
 2. **Version exchange.** Where is the holder protocol version stored: in the first message on the socket, in a discovery file, or in both? The daemon must know the version before it sends a message.

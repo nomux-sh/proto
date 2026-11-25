@@ -1,6 +1,6 @@
 # Terminal frame header
 
-**Status: DRAFT.** The layout can change until ADR-0002 (protocol: protobuf and binary frame) is accepted.
+**Status: DRAFT.** The layout can change in a minor version until version 1.0.0. [Open items](#open-items) lists what is not decided.
 
 This document specifies the fixed binary header of a terminal data frame.
 The implementation is the module `frame` of the crate `nomux-proto`.
@@ -142,7 +142,7 @@ A receiver does these checks in this order. The receiver stops at the first chec
 
 ## Open items
 
-These items belong to milestone M1 and to ADR-0002:
+These items are not decided. The [roadmap](https://github.com/nomux-sh/docs/blob/main/src/content/docs/project/roadmap.md) gives the plan.
 
 - The payload layout of each frame kind.
 - The values of `session`, `epoch`, and `seq` for kinds that do not belong to one session, for example `Credit`.

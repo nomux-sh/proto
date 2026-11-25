@@ -1,6 +1,6 @@
 # Compatibility
 
-**Status: DRAFT.** The rules can change until ADR-0002 is accepted.
+**Status: DRAFT.** The rules can change in a minor version until version 1.0.0.
 
 This document specifies how a client and a daemon agree on a control protocol version.
 
@@ -79,7 +79,7 @@ The table gives the control protocol version of each product release. No release
 
 ## Open items
 
-These items belong to ADR-0002 and milestone M1:
+These items are not decided. The [roadmap](https://github.com/nomux-sh/docs/blob/main/src/content/docs/project/roadmap.md) gives the plan.
 
 - Whether the `Error` for an incompatible version also carries the `version` and `oldest` values of the daemon as fields, so that a client can print them without the message text.
 - The framing of an `Envelope` on the control channel. The current draft is a varint length prefix before each `Envelope` (protobuf length-delimited encoding).

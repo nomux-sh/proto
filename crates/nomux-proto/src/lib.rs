@@ -2,8 +2,9 @@
 //!
 //! This crate has three parts:
 //!
-//! - [`wire::v1`]: the control messages of the handshake and the envelope.
-//!   `prost` generates these types from the schemas in `proto/nomux/wire/v1/`.
+//! - [`wire::v1`]: the control messages: the envelope, the handshake, the
+//!   Host service and the Session service. `prost` generates these types
+//!   from the schemas in `proto/nomux/wire/v1/`.
 //! - [`frame`]: the fixed binary header of a terminal data frame.
 //! - [`compatibility`]: the control protocol version and the version rule of
 //!   the handshake.
@@ -30,6 +31,11 @@ pub mod wire {
     /// file is included with `include!`, thus `rustfmt` does not format it.
     pub mod v1 {
         include!("generated/nomux.wire.v1.rs");
+
+        /// The largest number of bytes of one encoded [`Envelope`] on the
+        /// control channel. A peer that reads a larger length closes the
+        /// connection. See `spec/control.md`.
+        pub const MAX_ENVELOPE_LENGTH: usize = 1024 * 1024;
 
         /// `Hello` contains the device token, which is a secret. This
         /// implementation prints all fields but replaces the token.

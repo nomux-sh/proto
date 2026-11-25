@@ -5,8 +5,10 @@
 
 use nomux_proto::compatibility::EXIT_CODE_VERSION_INCOMPATIBLE;
 use nomux_proto::wire::v1::{
-    ClientKind, Envelope, Error, ErrorCode, Event, Hello, Request, Response, Welcome, envelope,
-    request, response,
+    ClientKind, Envelope, Error, ErrorCode, Event, Hello, HostInfoRequest, HostInfoResponse,
+    HostStopRequest, HostStopResponse, Request, Response, Session, SessionCreateRequest,
+    SessionCreateResponse, SessionKillRequest, SessionKillResponse, SessionListRequest,
+    SessionListResponse, SessionState, Welcome, envelope, request, response,
 };
 use prost::Message;
 
@@ -123,12 +125,132 @@ fn client_kind_values_are_stable() {
 #[test]
 fn error_code_values_are_the_exit_codes() {
     assert_eq!(ErrorCode::Unspecified as i32, 0);
+    assert_eq!(ErrorCode::Failed as i32, 1);
+    assert_eq!(ErrorCode::NotFound as i32, 2);
+    assert_eq!(ErrorCode::Timeout as i32, 3);
     assert_eq!(ErrorCode::PermissionDenied as i32, 4);
     assert_eq!(
         ErrorCode::VersionIncompatible as i32,
         i32::from(EXIT_CODE_VERSION_INCOMPATIBLE)
     );
     assert_eq!(EXIT_CODE_VERSION_INCOMPATIBLE, 5);
+}
+
+#[test]
+fn session_state_values_are_stable() {
+    assert_eq!(SessionState::Unspecified as i32, 0);
+    assert_eq!(SessionState::Running as i32, 1);
+    assert_eq!(SessionState::Unreachable as i32, 2);
+}
+
+fn request_bytes(body: request::Body) -> Vec<u8> {
+    Request {
+        id: 1,
+        body: Some(body),
+    }
+    .encode_to_vec()
+}
+
+fn response_bytes(result: response::Result) -> Vec<u8> {
+    Response {
+        id: 1,
+        result: Some(result),
+    }
+    .encode_to_vec()
+}
+
+#[test]
+fn host_service_wire_bytes_are_stable() {
+    assert_eq!(
+        request_bytes(request::Body::HostInfo(HostInfoRequest {})),
+        [0x08, 0x01, 0xc2, 0x0c, 0x00], // id = 1; field 200, bytes: empty
+    );
+    assert_eq!(
+        request_bytes(request::Body::HostStop(HostStopRequest {})),
+        [0x08, 0x01, 0xca, 0x0c, 0x00], // id = 1; field 201, bytes: empty
+    );
+    assert_eq!(
+        response_bytes(response::Result::HostInfo(HostInfoResponse {
+            daemon_version: "v".to_owned(),
+            daemon_pid: 7,
+            session_count: 2,
+        })),
+        [
+            0x08, 0x01, // id = 1
+            0xc2, 0x0c, 0x07, // field 200, bytes: host_info
+            0x0a, 0x01, b'v', // field 1, bytes: daemon_version = "v"
+            0x10, 0x07, // field 2, varint: daemon_pid = 7
+            0x18, 0x02, // field 3, varint: session_count = 2
+        ],
+    );
+    assert_eq!(
+        response_bytes(response::Result::HostStop(HostStopResponse {})),
+        [0x08, 0x01, 0xca, 0x0c, 0x00],
+    );
+}
+
+#[test]
+fn session_service_wire_bytes_are_stable() {
+    let session = Session {
+        id: "s".to_owned(),
+        state: SessionState::Unreachable.into(),
+        pid: 9,
+    };
+    let session_bytes = [
+        0x0a, 0x01, b's', // field 1, bytes: id = "s"
+        0x10, 0x02, // field 2, varint: state = UNREACHABLE
+        0x18, 0x09, // field 3, varint: pid = 9
+    ];
+    assert_eq!(session.encode_to_vec(), session_bytes);
+
+    assert_eq!(
+        request_bytes(request::Body::SessionCreate(SessionCreateRequest {
+            command: vec!["a".to_owned(), "b".to_owned()],
+            working_directory: "/".to_owned(),
+        })),
+        [
+            0x08, 0x01, // id = 1
+            0xe2, 0x12, 0x09, // field 300, bytes: session_create
+            0x0a, 0x01, b'a', // field 1, bytes: command = "a"
+            0x0a, 0x01, b'b', // field 1, bytes: command = "b"
+            0x12, 0x01, b'/', // field 2, bytes: working_directory = "/"
+        ],
+    );
+    assert_eq!(
+        request_bytes(request::Body::SessionList(SessionListRequest {})),
+        [0x08, 0x01, 0xea, 0x12, 0x00], // id = 1; field 301, bytes: empty
+    );
+    assert_eq!(
+        request_bytes(request::Body::SessionKill(SessionKillRequest {
+            id: "s".to_owned(),
+        })),
+        [
+            0x08, 0x01, // id = 1
+            0xf2, 0x12, 0x03, // field 302, bytes: session_kill
+            0x0a, 0x01, b's', // field 1, bytes: id = "s"
+        ],
+    );
+
+    let mut created = vec![0x08, 0x01, 0xe2, 0x12, 0x09, 0x0a, 0x07];
+    created.extend_from_slice(&session_bytes);
+    assert_eq!(
+        response_bytes(response::Result::SessionCreate(SessionCreateResponse {
+            session: Some(session.clone()),
+        })),
+        created,
+    );
+    let mut listed = vec![0x08, 0x01, 0xea, 0x12, 0x09, 0x0a, 0x07];
+    listed.extend_from_slice(&session_bytes);
+    assert_eq!(
+        response_bytes(response::Result::SessionList(SessionListResponse {
+            sessions: vec![session],
+        })),
+        listed,
+    );
+    assert_eq!(
+        response_bytes(response::Result::SessionKill(SessionKillResponse {})),
+        [0x08, 0x01, 0xf2, 0x12, 0x00],
+    );
 }
 
 #[test]

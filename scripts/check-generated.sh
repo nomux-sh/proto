@@ -11,13 +11,10 @@ generated_dir="crates/nomux-proto/src/generated"
 
 buf generate
 
-# Compare the working tree with the index: changed and deleted files come
-# from `git diff`, new files come from `git ls-files --others`.
-changed="$(git diff --name-only -- "$generated_dir")"
-untracked="$(git ls-files --others --exclude-standard -- "$generated_dir")"
-if [ -n "$changed" ] || [ -n "$untracked" ]; then
+stale="$(git status --porcelain -- "$generated_dir")"
+if [ -n "$stale" ]; then
   echo "error: generated code is stale. Run 'buf generate' and commit the result." >&2
-  printf '%s\n' $changed $untracked >&2
+  printf '%s\n' "$stale" >&2
   git --no-pager diff -- "$generated_dir" >&2
   exit 1
 fi

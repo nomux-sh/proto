@@ -1,6 +1,6 @@
 # Holder protocol
 
-**Status: IMPLEMENTED, version 1.1.** The holder protocol is defined and implemented in the `nomux` repository. Its specification is [`docs/holder.md`](https://github.com/nomux-sh/nomux/blob/main/docs/holder.md) there: messages, encoding, ring buffer layout, discovery files, lease and version rule. The code is the crate `nomux-holder-protocol`. This document gives the versioning rule and the questions that are still open.
+**Status: IMPLEMENTED, version 1.3.** The holder protocol is defined and implemented in the `nomux` repository. Its specification is [`docs/holder.md`](https://github.com/nomux-sh/nomux/blob/main/docs/holder.md) there: messages, encoding, ring buffer layout, discovery files, lease and version rule. The code is the crate `nomux-holder-protocol`. This document gives the versioning rule and the questions that are still open.
 
 The holder protocol is not a part of the `nomux-proto` crate. It has a small binary encoding of its own, because the holder must stay small and has no async runtime.
 
@@ -42,14 +42,14 @@ The specification in the `nomux` repository answers these questions:
 - **Discovery.** Each holder has a private directory with the files `pid` (process ID and process start time), `sock` and `ready`. The holder writes `ready` last.
 - **Input, resize and signals.** One request for each.
 - **Screen redraw.** The holder keeps the screen state and gives the byte sequence that reproduces the screen, together with the ring buffer position that the sequence corresponds to.
+- **Epoch and sequence number.** The sequence number of an output byte is its byte position. One holder process gives one epoch, and a new holder for the same session gives the next epoch. [frame.md](frame.md) has the rule for the clients.
+- **Journal and checkpoints.** The holder writes the output and checkpoints of the screen to files, and the daemon reads the files also when no holder runs. The format is a part of the contract between the holder and the daemon.
+- **Program reports.** The holder reads the prompt marks (OSC 133), the program status (OSC 7501) and the notifications, and gives them to the daemon.
 
 ## Open questions
 
-1. **Epoch and sequence number.** Which event starts a new epoch. The unit of the sequence number. [frame.md](frame.md) has the rule that the daemon uses now, without a journal: one epoch for the life of a Session, and the byte position of the ring buffer as the sequence number.
-2. **Journal and checkpoint format.** The format on disk, and whether this format is a part of the holder protocol or private to the holder.
-3. **Input line state.** The report of the prompt marks (OSC 133 B and C) and of the program status (OSC 7501).
-4. **Warm pool.** The message that assigns a session to a holder from the warm pool.
-5. **Compatibility tests.** How CI tests a new daemon with each older holder version of the same major version.
+1. **Warm pool.** The message that assigns a session to a holder from the warm pool.
+2. **Compatibility tests.** How CI tests a new daemon with each older holder version of the same major version.
 
 ## Not in this document
 

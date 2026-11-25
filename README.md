@@ -11,11 +11,11 @@ In development. Versions earlier than 1.0.0 are pre-releases: interfaces can cha
 The repository has these parts now:
 
 - The handshake messages (`Hello`, `Welcome`) and the envelope messages (`Envelope`, `Request`, `Response`, `Event`, `Error`) of the control protocol.
-- The Host service (`Info`, `Stop`) and the Session service (`Create`, `List`, `Kill`) of the control protocol.
-- The codec for the header of a terminal data frame.
+- The Host service (`Info`, `Stop`) and the Session service (`Create`, `List`, `Kill`, `Attach`, `Detach`, `Input`, `Resize`) of the control protocol.
+- The codec for the header of a terminal data frame and for the payload of the `End` frame.
 - The version rule: how a client and a daemon select a control protocol version.
 
-The layout of the frame header is a draft. [spec/frame.md](spec/frame.md) lists the open items. The payload of each frame kind, the holder protocol and the messages of the other services are future work. The [roadmap](https://github.com/nomux-sh/docs/blob/main/src/content/docs/project/roadmap.md) gives the plan.
+The layout of the frame header is a draft. [spec/frame.md](spec/frame.md) specifies the terminal data path of an attach and lists the open items. The screen diff, the acknowledgement, the credit window and the messages of the other services are future work. The [roadmap](https://github.com/nomux-sh/docs/blob/main/src/content/docs/project/roadmap.md) gives the plan.
 
 [ADR-0002](https://github.com/nomux-sh/docs/blob/main/adr/0002-protocol-protobuf-and-binary-frames.md) records the decision to use protobuf for control messages and binary frames for terminal data.
 
@@ -28,10 +28,10 @@ proto/nomux/wire/v1/         protobuf schemas, package nomux.wire.v1
   handshake.proto            Hello, Welcome, ClientKind
   envelope.proto             Envelope, Request, Response, Event, Error
   host.proto                 Host service: Info, Stop
-  session.proto              Session service: Create, List, Kill
+  session.proto              Session service: Create, List, Kill, Attach, Detach, Input, Resize
 spec/
   control.md                 control channel: framing, error codes, services and their messages
-  frame.md                   terminal frame header (binary, not protobuf)
+  frame.md                   terminal frames (binary, not protobuf): header, payloads, terminal data path
   holder.md                  holder protocol: versioning rule, open questions
   capabilities.md            capability flag registry
   compatibility.md           version rule of the handshake, exit code 5

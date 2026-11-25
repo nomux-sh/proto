@@ -8,11 +8,11 @@ In development. Versions earlier than 1.0.0 are pre-releases: interfaces can cha
 
 The crate has these parts now:
 
-- `wire::v1`: the control messages. These are the envelope messages (`Envelope`, `Request`, `Response`, `Event`, `Error`), the handshake messages (`Hello`, `Welcome`), the Host service (`Info`, `Stop`) and the Session service (`Create`, `List`, `Kill`). `prost` generates these types from the protobuf schemas.
-- `frame`: the fixed 24-byte header of a terminal data frame, with encode and decode functions.
+- `wire::v1`: the control messages. These are the envelope messages (`Envelope`, `Request`, `Response`, `Event`, `Error`), the handshake messages (`Hello`, `Welcome`), the Host service (`Info`, `Stop`) and the Session service (`Create`, `List`, `Kill`, `Attach`, `Detach`, `Input`, `Resize`). `prost` generates these types from the protobuf schemas.
+- `frame`: the fixed 24-byte header of a terminal data frame and the payload of the `End` frame, with encode and decode functions.
 - `compatibility`: the control protocol version and the version rule of the handshake.
 
-The layout of the frame header is a draft. The payload of each frame kind and the messages of the other services are future work. The [roadmap](https://github.com/nomux-sh/docs/blob/main/src/content/docs/project/roadmap.md) gives the plan.
+The layout of the frame header is a draft. The screen diff, the acknowledgement, the credit window and the messages of the other services are future work. The [roadmap](https://github.com/nomux-sh/docs/blob/main/src/content/docs/project/roadmap.md) gives the plan.
 
 The generated code is a part of the crate. A build does not start `buf` or `protoc`.
 

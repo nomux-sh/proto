@@ -3,7 +3,7 @@
 //! Field numbers, wire types and enum values are permanent. Each test has the
 //! expected bytes or values as literals, thus a changed schema fails the test.
 
-use nomux_proto::compat::EXIT_CODE_VERSION_INCOMPATIBLE;
+use nomux_proto::compatibility::EXIT_CODE_VERSION_INCOMPATIBLE;
 use nomux_proto::wire::v1::{
     ClientKind, Envelope, Error, ErrorCode, Event, Hello, Request, Response, Welcome, envelope,
     request, response,

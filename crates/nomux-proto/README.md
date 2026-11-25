@@ -8,7 +8,7 @@ The protocol is a draft. There is no public release.
 
 - `wire::v1`: the control messages (`Hello`, `Welcome`, `Envelope`, `Request`, `Response`, `Event`, `Error`). `prost` generates these types from the protobuf schemas.
 - `frame`: the fixed 24-byte header of a terminal data frame, with encode and decode functions.
-- `compat`: the control protocol version and the version rule of the handshake.
+- `compatibility`: the control protocol version and the version rule of the handshake.
 
 The generated code is a part of the crate. A build does not start `buf` or `protoc`.
 
@@ -17,7 +17,7 @@ The crate has no `unsafe` code.
 ## Example
 
 ```rust
-use nomux_proto::compat::VersionRange;
+use nomux_proto::compatibility::VersionRange;
 use nomux_proto::wire::v1::{ClientKind, Hello};
 use prost::Message;
 

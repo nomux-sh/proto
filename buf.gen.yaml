@@ -1,0 +1,20 @@
+# Code generation for the `nomux-proto` crate.
+#
+# The plugin is a binary in this workspace (tools/protoc-gen-nomux-prost).
+# Cargo.lock pins its `prost-build` version together with the `prost` runtime
+# version of `nomux-proto`. No plugin is downloaded and no remote plugin runs.
+#
+# Run `buf generate` from the repository root.
+version: v2
+clean: true
+inputs:
+  - directory: proto
+plugins:
+  - local:
+      - cargo
+      - run
+      - --quiet
+      - --locked
+      - --package
+      - protoc-gen-nomux-prost
+    out: crates/nomux-proto/src/generated

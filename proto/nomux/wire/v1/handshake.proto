@@ -1,0 +1,64 @@
+// Handshake messages of the nomux control protocol.
+//
+// The handshake is the first exchange on the control channel. The client
+// sends `Hello` in the first `Request`. The daemon replies with `Welcome`, or
+// with an `Error` (see envelope.proto).
+//
+// The version rule is in spec/compatibility.md. The capability flag registry
+// is in spec/capabilities.md.
+
+syntax = "proto3";
+
+package nomux.wire.v1;
+
+// The kind of client that opens the connection.
+enum ClientKind {
+  // The client did not set the field. The daemon treats the client as unknown.
+  CLIENT_KIND_UNSPECIFIED = 0;
+  // The `nomux` command-line client.
+  CLIENT_KIND_CLI = 1;
+  // The desktop client.
+  CLIENT_KIND_DESKTOP = 2;
+  // The mobile client.
+  CLIENT_KIND_MOBILE = 3;
+}
+
+// The first message from the client.
+message Hello {
+  // The newest control protocol version that the client can use.
+  // The value is an integer and is never 0.
+  uint32 version = 1;
+  // The oldest control protocol version that the client can use.
+  // The value is never 0 and is never larger than `version`.
+  uint32 oldest = 2;
+  // The capability flags that the client supports. Each item is a flag name
+  // from spec/capabilities.md. The daemon ignores names that it does not know.
+  repeated string capabilities = 3;
+  // The kind of client.
+  ClientKind client_kind = 4;
+  // The device token from device pairing. The value is opaque to the client.
+  // The field is empty if the transport already authenticates the user, for
+  // example SSH. The token is a secret: do not write it to logs.
+  string token = 5;
+
+  // Field numbers 6 to 15 are free. Use them only for new handshake fields.
+  // Do not use a `reserved` statement for free numbers: `buf breaking` does
+  // not let you delete a reserved range later.
+}
+
+// The reply from the daemon to `Hello`.
+message Welcome {
+  // The newest control protocol version that the daemon can use.
+  // The value is never 0.
+  uint32 version = 1;
+  // The oldest control protocol version that the daemon can use.
+  // The value is never 0 and is never larger than `version`.
+  uint32 oldest = 2;
+  // The capability flags that the daemon supports. Each item is a flag name
+  // from spec/capabilities.md. The client ignores names that it does not know.
+  repeated string capabilities = 3;
+  // The stable identity of the host. The value is opaque to the client.
+  string host_id = 4;
+
+  // Field numbers 5 to 15 are free. Use them only for new handshake fields.
+}

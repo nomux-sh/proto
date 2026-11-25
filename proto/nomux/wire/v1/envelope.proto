@@ -16,7 +16,9 @@
 //   1 to 15      Envelope fields (id, error). These numbers use one tag byte.
 //   16 to 99     Not assigned.
 //   100 to 199   Handshake service.
-//   200 and up   Not assigned. Each new service takes the next free block of
+//   200 to 299   Host service.
+//   300 to 399   Session service.
+//   400 and up   Not assigned. Each new service takes the next free block of
 //                100 numbers.
 //
 // A request and its response use the same field number where possible.
@@ -29,16 +31,22 @@ syntax = "proto3";
 package nomux.wire.v1;
 
 import "nomux/wire/v1/handshake.proto";
+import "nomux/wire/v1/host.proto";
+import "nomux/wire/v1/session.proto";
 
 // The reason for a failed request.
 //
 // Each value is equal to the related exit code of the `nomux` command-line
-// client. Values 1, 2 and 3 are the other exit codes (error, not found,
-// timeout). They are not defined here: the change that adds a service which
-// returns them also adds them.
+// client.
 enum ErrorCode {
   // The daemon did not set the field. The client treats this as an error.
   ERROR_CODE_UNSPECIFIED = 0;
+  // The request failed, and no other code gives the reason.
+  ERROR_CODE_FAILED = 1;
+  // The item that the request names does not exist.
+  ERROR_CODE_NOT_FOUND = 2;
+  // The daemon did not complete the request in the permitted time.
+  ERROR_CODE_TIMEOUT = 3;
   // The client does not have permission. For the handshake: the token is
   // missing, not valid, or revoked.
   ERROR_CODE_PERMISSION_DENIED = 4;
@@ -67,6 +75,16 @@ message Request {
   oneof body {
     // Handshake: the first request on a connection.
     Hello hello = 100;
+    // Host.Info.
+    HostInfoRequest host_info = 200;
+    // Host.Stop.
+    HostStopRequest host_stop = 201;
+    // Session.Create.
+    SessionCreateRequest session_create = 300;
+    // Session.List.
+    SessionListRequest session_list = 301;
+    // Session.Kill.
+    SessionKillRequest session_kill = 302;
   }
 }
 
@@ -81,6 +99,16 @@ message Response {
     Error error = 2;
     // Handshake: the reply to `Hello`.
     Welcome welcome = 100;
+    // Host.Info.
+    HostInfoResponse host_info = 200;
+    // Host.Stop.
+    HostStopResponse host_stop = 201;
+    // Session.Create.
+    SessionCreateResponse session_create = 300;
+    // Session.List.
+    SessionListResponse session_list = 301;
+    // Session.Kill.
+    SessionKillResponse session_kill = 302;
   }
 }
 

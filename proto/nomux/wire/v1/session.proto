@@ -1,0 +1,70 @@
+// Session service of the nomux control protocol.
+//
+// The requests and the responses are fields of `Request.body` and
+// `Response.result` (see envelope.proto). The Session service has the field
+// numbers 300 to 399 there.
+//
+// STATUS: DRAFT. The messages can change in a minor version until version
+// 1.0.0.
+
+syntax = "proto3";
+
+package nomux.wire.v1;
+
+// The state of a Session, as the daemon knows it.
+enum SessionState {
+  // The daemon did not set the field. The client treats the state as unknown.
+  SESSION_STATE_UNSPECIFIED = 0;
+  // The command of the Session runs.
+  SESSION_STATE_RUNNING = 1;
+  // The holder of the Session runs, but the daemon has no connection to it.
+  // The daemon tries to connect again.
+  SESSION_STATE_UNREACHABLE = 2;
+}
+
+// One Session on the Host.
+message Session {
+  // The session identifier: 1 to 64 characters from `A-Z`, `a-z`, `0-9`, `-`
+  // and `_`. The value is unique on the Host.
+  string id = 1;
+  // The state of the Session.
+  SessionState state = 2;
+  // The process ID of the command on the Host. The value is 0 if the daemon
+  // does not know it.
+  uint32 pid = 3;
+}
+
+// Session.Create: starts a new Session.
+message SessionCreateRequest {
+  // The program and its arguments. If the list is empty, the daemon starts
+  // the shell of the user.
+  repeated string command = 1;
+  // The working directory of the command: an absolute path on the Host. If
+  // the value is empty, the daemon uses the home directory of the user.
+  string working_directory = 2;
+}
+
+// The reply to `SessionCreateRequest`.
+message SessionCreateResponse {
+  // The new Session.
+  Session session = 1;
+}
+
+// Session.List: asks for all Sessions on the Host.
+message SessionListRequest {}
+
+// The reply to `SessionListRequest`.
+message SessionListResponse {
+  // The Sessions, in the sequence of their identifiers.
+  repeated Session sessions = 1;
+}
+
+// Session.Kill: ends a Session. The daemon answers after the command of the
+// Session has ended.
+message SessionKillRequest {
+  // The identifier of the Session.
+  string id = 1;
+}
+
+// The reply to `SessionKillRequest`.
+message SessionKillResponse {}

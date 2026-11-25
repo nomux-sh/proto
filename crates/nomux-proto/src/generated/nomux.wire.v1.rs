@@ -80,6 +80,119 @@ impl ClientKind {
         }
     }
 }
+/// Host.Info: asks for the state of the daemon.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct HostInfoRequest {}
+/// The reply to `HostInfoRequest`.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct HostInfoResponse {
+    /// The product version of the daemon, for example "0.1.0".
+    #[prost(string, tag = "1")]
+    pub daemon_version: ::prost::alloc::string::String,
+    /// The process ID of the daemon on the Host.
+    #[prost(uint32, tag = "2")]
+    pub daemon_pid: u32,
+    /// The number of Sessions that the daemon knows.
+    #[prost(uint32, tag = "3")]
+    pub session_count: u32,
+}
+/// Host.Stop: tells the daemon to stop. No Session ends: the holders
+/// continue, and the next daemon finds them.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct HostStopRequest {}
+/// The reply to `HostStopRequest`. The daemon sends it and then closes each
+/// connection and exits.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct HostStopResponse {}
+/// One Session on the Host.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Session {
+    /// The session identifier: 1 to 64 characters from `A-Z`, `a-z`, `0-9`, `-`
+    /// and `_`. The value is unique on the Host.
+    #[prost(string, tag = "1")]
+    pub id: ::prost::alloc::string::String,
+    /// The state of the Session.
+    #[prost(enumeration = "SessionState", tag = "2")]
+    pub state: i32,
+    /// The process ID of the command on the Host. The value is 0 if the daemon
+    /// does not know it.
+    #[prost(uint32, tag = "3")]
+    pub pid: u32,
+}
+/// Session.Create: starts a new Session.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SessionCreateRequest {
+    /// The program and its arguments. If the list is empty, the daemon starts
+    /// the shell of the user.
+    #[prost(string, repeated, tag = "1")]
+    pub command: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// The working directory of the command: an absolute path on the Host. If
+    /// the value is empty, the daemon uses the home directory of the user.
+    #[prost(string, tag = "2")]
+    pub working_directory: ::prost::alloc::string::String,
+}
+/// The reply to `SessionCreateRequest`.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SessionCreateResponse {
+    /// The new Session.
+    #[prost(message, optional, tag = "1")]
+    pub session: ::core::option::Option<Session>,
+}
+/// Session.List: asks for all Sessions on the Host.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SessionListRequest {}
+/// The reply to `SessionListRequest`.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SessionListResponse {
+    /// The Sessions, in the sequence of their identifiers.
+    #[prost(message, repeated, tag = "1")]
+    pub sessions: ::prost::alloc::vec::Vec<Session>,
+}
+/// Session.Kill: ends a Session. The daemon answers after the command of the
+/// Session has ended.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SessionKillRequest {
+    /// The identifier of the Session.
+    #[prost(string, tag = "1")]
+    pub id: ::prost::alloc::string::String,
+}
+/// The reply to `SessionKillRequest`.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SessionKillResponse {}
+/// The state of a Session, as the daemon knows it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum SessionState {
+    /// The daemon did not set the field. The client treats the state as unknown.
+    Unspecified = 0,
+    /// The command of the Session runs.
+    Running = 1,
+    /// The holder of the Session runs, but the daemon has no connection to it.
+    /// The daemon tries to connect again.
+    Unreachable = 2,
+}
+impl SessionState {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "SESSION_STATE_UNSPECIFIED",
+            Self::Running => "SESSION_STATE_RUNNING",
+            Self::Unreachable => "SESSION_STATE_UNREACHABLE",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "SESSION_STATE_UNSPECIFIED" => Some(Self::Unspecified),
+            "SESSION_STATE_RUNNING" => Some(Self::Running),
+            "SESSION_STATE_UNREACHABLE" => Some(Self::Unreachable),
+            _ => None,
+        }
+    }
+}
 /// The failure result of a request.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Error {
@@ -101,7 +214,7 @@ pub struct Request {
     pub id: u64,
     /// The request body. Each new service adds its requests here. See the field
     /// number plan at the top of this file.
-    #[prost(oneof = "request::Body", tags = "100")]
+    #[prost(oneof = "request::Body", tags = "100, 200, 201, 300, 301, 302")]
     pub body: ::core::option::Option<request::Body>,
 }
 /// Nested message and enum types in `Request`.
@@ -113,24 +226,39 @@ pub mod request {
         /// Handshake: the first request on a connection.
         #[prost(message, tag = "100")]
         Hello(super::Hello),
+        /// Host.Info.
+        #[prost(message, tag = "200")]
+        HostInfo(super::HostInfoRequest),
+        /// Host.Stop.
+        #[prost(message, tag = "201")]
+        HostStop(super::HostStopRequest),
+        /// Session.Create.
+        #[prost(message, tag = "300")]
+        SessionCreate(super::SessionCreateRequest),
+        /// Session.List.
+        #[prost(message, tag = "301")]
+        SessionList(super::SessionListRequest),
+        /// Session.Kill.
+        #[prost(message, tag = "302")]
+        SessionKill(super::SessionKillRequest),
     }
 }
 /// The response from the daemon to one request.
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Response {
     /// The `id` of the request that this response answers.
     #[prost(uint64, tag = "1")]
     pub id: u64,
     /// The result of the request. Each new service adds its results here. See
     /// the field number plan at the top of this file.
-    #[prost(oneof = "response::Result", tags = "2, 100")]
+    #[prost(oneof = "response::Result", tags = "2, 100, 200, 201, 300, 301, 302")]
     pub result: ::core::option::Option<response::Result>,
 }
 /// Nested message and enum types in `Response`.
 pub mod response {
     /// The result of the request. Each new service adds its results here. See
     /// the field number plan at the top of this file.
-    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Result {
         /// The request failed.
         #[prost(message, tag = "2")]
@@ -138,6 +266,21 @@ pub mod response {
         /// Handshake: the reply to `Hello`.
         #[prost(message, tag = "100")]
         Welcome(super::Welcome),
+        /// Host.Info.
+        #[prost(message, tag = "200")]
+        HostInfo(super::HostInfoResponse),
+        /// Host.Stop.
+        #[prost(message, tag = "201")]
+        HostStop(super::HostStopResponse),
+        /// Session.Create.
+        #[prost(message, tag = "300")]
+        SessionCreate(super::SessionCreateResponse),
+        /// Session.List.
+        #[prost(message, tag = "301")]
+        SessionList(super::SessionListResponse),
+        /// Session.Kill.
+        #[prost(message, tag = "302")]
+        SessionKill(super::SessionKillResponse),
     }
 }
 /// A message from the daemon that no request asked for.
@@ -153,7 +296,7 @@ pub struct Event {
     pub seq: u64,
 }
 /// One message on the control channel.
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Envelope {
     /// The content of the envelope.
     #[prost(oneof = "envelope::Kind", tags = "1, 2, 3")]
@@ -162,7 +305,7 @@ pub struct Envelope {
 /// Nested message and enum types in `Envelope`.
 pub mod envelope {
     /// The content of the envelope.
-    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Kind {
         /// A request from the client.
         #[prost(message, tag = "1")]
@@ -178,14 +321,18 @@ pub mod envelope {
 /// The reason for a failed request.
 ///
 /// Each value is equal to the related exit code of the `nomux` command-line
-/// client. Values 1, 2 and 3 are the other exit codes (error, not found,
-/// timeout). They are not defined here: the change that adds a service which
-/// returns them also adds them.
+/// client.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum ErrorCode {
     /// The daemon did not set the field. The client treats this as an error.
     Unspecified = 0,
+    /// The request failed, and no other code gives the reason.
+    Failed = 1,
+    /// The item that the request names does not exist.
+    NotFound = 2,
+    /// The daemon did not complete the request in the permitted time.
+    Timeout = 3,
     /// The client does not have permission. For the handshake: the token is
     /// missing, not valid, or revoked.
     PermissionDenied = 4,
@@ -201,6 +348,9 @@ impl ErrorCode {
     pub fn as_str_name(&self) -> &'static str {
         match self {
             Self::Unspecified => "ERROR_CODE_UNSPECIFIED",
+            Self::Failed => "ERROR_CODE_FAILED",
+            Self::NotFound => "ERROR_CODE_NOT_FOUND",
+            Self::Timeout => "ERROR_CODE_TIMEOUT",
             Self::PermissionDenied => "ERROR_CODE_PERMISSION_DENIED",
             Self::VersionIncompatible => "ERROR_CODE_VERSION_INCOMPATIBLE",
         }
@@ -209,6 +359,9 @@ impl ErrorCode {
     pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
         match value {
             "ERROR_CODE_UNSPECIFIED" => Some(Self::Unspecified),
+            "ERROR_CODE_FAILED" => Some(Self::Failed),
+            "ERROR_CODE_NOT_FOUND" => Some(Self::NotFound),
+            "ERROR_CODE_TIMEOUT" => Some(Self::Timeout),
             "ERROR_CODE_PERMISSION_DENIED" => Some(Self::PermissionDenied),
             "ERROR_CODE_VERSION_INCOMPATIBLE" => Some(Self::VersionIncompatible),
             _ => None,

@@ -1,0 +1,33 @@
+// Host service of the nomux control protocol.
+//
+// The requests and the responses are fields of `Request.body` and
+// `Response.result` (see envelope.proto). The Host service has the field
+// numbers 200 to 299 there.
+//
+// STATUS: DRAFT. The messages can change in a minor version until version
+// 1.0.0.
+
+syntax = "proto3";
+
+package nomux.wire.v1;
+
+// Host.Info: asks for the state of the daemon.
+message HostInfoRequest {}
+
+// The reply to `HostInfoRequest`.
+message HostInfoResponse {
+  // The product version of the daemon, for example "0.1.0".
+  string daemon_version = 1;
+  // The process ID of the daemon on the Host.
+  uint32 daemon_pid = 2;
+  // The number of Sessions that the daemon knows.
+  uint32 session_count = 3;
+}
+
+// Host.Stop: tells the daemon to stop. No Session ends: the holders
+// continue, and the next daemon finds them.
+message HostStopRequest {}
+
+// The reply to `HostStopRequest`. The daemon sends it and then closes each
+// connection and exits.
+message HostStopResponse {}

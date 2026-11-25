@@ -85,6 +85,14 @@ message Request {
     SessionListRequest session_list = 301;
     // Session.Kill.
     SessionKillRequest session_kill = 302;
+    // Session.Attach. It is the last request on its connection.
+    SessionAttachRequest session_attach = 303;
+    // Session.Detach.
+    SessionDetachRequest session_detach = 304;
+    // Session.Input.
+    SessionInputRequest session_input = 305;
+    // Session.Resize.
+    SessionResizeRequest session_resize = 306;
   }
 }
 
@@ -109,6 +117,15 @@ message Response {
     SessionListResponse session_list = 301;
     // Session.Kill.
     SessionKillResponse session_kill = 302;
+    // Session.Attach. After this response, the connection carries terminal
+    // frames.
+    SessionAttachResponse session_attach = 303;
+    // Session.Detach.
+    SessionDetachResponse session_detach = 304;
+    // Session.Input.
+    SessionInputResponse session_input = 305;
+    // Session.Resize.
+    SessionResizeResponse session_resize = 306;
   }
 }
 

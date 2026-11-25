@@ -6,9 +6,11 @@
 use nomux_proto::compatibility::EXIT_CODE_VERSION_INCOMPATIBLE;
 use nomux_proto::wire::v1::{
     ClientKind, Envelope, Error, ErrorCode, Event, Hello, HostInfoRequest, HostInfoResponse,
-    HostStopRequest, HostStopResponse, Request, Response, Session, SessionCreateRequest,
-    SessionCreateResponse, SessionKillRequest, SessionKillResponse, SessionListRequest,
-    SessionListResponse, SessionState, Welcome, envelope, request, response,
+    HostStopRequest, HostStopResponse, Request, Response, Session, SessionAttachRequest,
+    SessionAttachResponse, SessionCreateRequest, SessionCreateResponse, SessionDetachRequest,
+    SessionDetachResponse, SessionInputRequest, SessionInputResponse, SessionKillRequest,
+    SessionKillResponse, SessionListRequest, SessionListResponse, SessionResizeRequest,
+    SessionResizeResponse, SessionState, Welcome, envelope, request, response,
 };
 use prost::Message;
 
@@ -250,6 +252,97 @@ fn session_service_wire_bytes_are_stable() {
     assert_eq!(
         response_bytes(response::Result::SessionKill(SessionKillResponse {})),
         [0x08, 0x01, 0xf2, 0x12, 0x00],
+    );
+}
+
+#[test]
+fn terminal_requests_of_the_session_service_have_stable_wire_bytes() {
+    assert_eq!(
+        request_bytes(request::Body::SessionAttach(SessionAttachRequest {
+            id: "s".to_owned(),
+            rows: 24,
+            columns: 80,
+            epoch: 1,
+            from_seq: 300,
+        })),
+        [
+            0x08, 0x01, // id = 1
+            0xfa, 0x12, 0x0c, // field 303, bytes: session_attach
+            0x0a, 0x01, b's', // field 1, bytes: id = "s"
+            0x10, 0x18, // field 2, varint: rows = 24
+            0x18, 0x50, // field 3, varint: columns = 80
+            0x20, 0x01, // field 4, varint: epoch = 1
+            0x28, 0xac, 0x02, // field 5, varint: from_seq = 300
+        ],
+    );
+    assert_eq!(
+        response_bytes(response::Result::SessionAttach(SessionAttachResponse {
+            handle: 1,
+            epoch: 2,
+        })),
+        [
+            0x08, 0x01, // id = 1
+            0xfa, 0x12, 0x04, // field 303, bytes: session_attach
+            0x08, 0x01, // field 1, varint: handle = 1
+            0x10, 0x02, // field 2, varint: epoch = 2
+        ],
+    );
+
+    assert_eq!(
+        request_bytes(request::Body::SessionDetach(SessionDetachRequest {
+            id: "s".to_owned(),
+        })),
+        [
+            0x08, 0x01, // id = 1
+            0x82, 0x13, 0x03, // field 304, bytes: session_detach
+            0x0a, 0x01, b's', // field 1, bytes: id = "s"
+        ],
+    );
+    assert_eq!(
+        response_bytes(response::Result::SessionDetach(SessionDetachResponse {
+            detached: 2,
+        })),
+        [
+            0x08, 0x01, // id = 1
+            0x82, 0x13, 0x02, // field 304, bytes: session_detach
+            0x08, 0x02, // field 1, varint: detached = 2
+        ],
+    );
+
+    assert_eq!(
+        request_bytes(request::Body::SessionInput(SessionInputRequest {
+            id: "s".to_owned(),
+            data: vec![0x03],
+        })),
+        [
+            0x08, 0x01, // id = 1
+            0x8a, 0x13, 0x06, // field 305, bytes: session_input
+            0x0a, 0x01, b's', // field 1, bytes: id = "s"
+            0x12, 0x01, 0x03, // field 2, bytes: data
+        ],
+    );
+    assert_eq!(
+        response_bytes(response::Result::SessionInput(SessionInputResponse {})),
+        [0x08, 0x01, 0x8a, 0x13, 0x00],
+    );
+
+    assert_eq!(
+        request_bytes(request::Body::SessionResize(SessionResizeRequest {
+            id: "s".to_owned(),
+            rows: 24,
+            columns: 80,
+        })),
+        [
+            0x08, 0x01, // id = 1
+            0x92, 0x13, 0x07, // field 306, bytes: session_resize
+            0x0a, 0x01, b's', // field 1, bytes: id = "s"
+            0x10, 0x18, // field 2, varint: rows = 24
+            0x18, 0x50, // field 3, varint: columns = 80
+        ],
+    );
+    assert_eq!(
+        response_bytes(response::Result::SessionResize(SessionResizeResponse {})),
+        [0x08, 0x01, 0x92, 0x13, 0x00],
     );
 }
 

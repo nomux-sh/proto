@@ -159,6 +159,89 @@ pub struct SessionKillRequest {
 /// The reply to `SessionKillRequest`.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct SessionKillResponse {}
+/// Session.Attach: connects the client to the terminal of a Session.
+///
+/// After the response, the connection carries terminal frames and no control
+/// messages: spec/frame.md has the terminal data path. A client ends its
+/// attach when it closes the connection.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SessionAttachRequest {
+    /// The identifier of the Session.
+    #[prost(string, tag = "1")]
+    pub id: ::prost::alloc::string::String,
+    /// The number of rows of the window of the client. If `rows` and `columns`
+    /// are not 0, the Session gets this window size before the daemon sends the
+    /// screen. If the two values are 0, the window size does not change.
+    #[prost(uint32, tag = "2")]
+    pub rows: u32,
+    /// The number of columns of the window of the client.
+    #[prost(uint32, tag = "3")]
+    pub columns: u32,
+    /// The epoch of the output that the client already has. The value is 0 if
+    /// the client has no output of the Session.
+    #[prost(uint32, tag = "4")]
+    pub epoch: u32,
+    /// The sequence number of the first output byte that the client does not
+    /// have. The daemon reads the value only if `epoch` is not 0.
+    #[prost(uint64, tag = "5")]
+    pub from_seq: u64,
+}
+/// The reply to `SessionAttachRequest`. It is the last control message on the
+/// connection.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SessionAttachResponse {
+    /// The session handle: the value of the `session` field of each terminal
+    /// frame of this attach. The value is not 0.
+    #[prost(uint32, tag = "1")]
+    pub handle: u32,
+    /// The current epoch of the Session. The value is not 0.
+    #[prost(uint32, tag = "2")]
+    pub epoch: u32,
+}
+/// Session.Detach: ends each attach to a Session. The Session continues.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SessionDetachRequest {
+    /// The identifier of the Session.
+    #[prost(string, tag = "1")]
+    pub id: ::prost::alloc::string::String,
+}
+/// The reply to `SessionDetachRequest`.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SessionDetachResponse {
+    /// The number of clients that the daemon detached.
+    #[prost(uint32, tag = "1")]
+    pub detached: u32,
+}
+/// Session.Input: writes bytes to the terminal of a Session, as if the user
+/// typed them. A client that is attached sends `Input` frames instead.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SessionInputRequest {
+    /// The identifier of the Session.
+    #[prost(string, tag = "1")]
+    pub id: ::prost::alloc::string::String,
+    /// The bytes for the terminal.
+    #[prost(bytes = "vec", tag = "2")]
+    pub data: ::prost::alloc::vec::Vec<u8>,
+}
+/// The reply to `SessionInputRequest`.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SessionInputResponse {}
+/// Session.Resize: changes the window size of a Session.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SessionResizeRequest {
+    /// The identifier of the Session.
+    #[prost(string, tag = "1")]
+    pub id: ::prost::alloc::string::String,
+    /// The number of rows: 1 to 65535.
+    #[prost(uint32, tag = "2")]
+    pub rows: u32,
+    /// The number of columns: 1 to 65535. A window has 1048576 cells at most.
+    #[prost(uint32, tag = "3")]
+    pub columns: u32,
+}
+/// The reply to `SessionResizeRequest`.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SessionResizeResponse {}
 /// The state of a Session, as the daemon knows it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -214,7 +297,10 @@ pub struct Request {
     pub id: u64,
     /// The request body. Each new service adds its requests here. See the field
     /// number plan at the top of this file.
-    #[prost(oneof = "request::Body", tags = "100, 200, 201, 300, 301, 302")]
+    #[prost(
+        oneof = "request::Body",
+        tags = "100, 200, 201, 300, 301, 302, 303, 304, 305, 306"
+    )]
     pub body: ::core::option::Option<request::Body>,
 }
 /// Nested message and enum types in `Request`.
@@ -241,6 +327,18 @@ pub mod request {
         /// Session.Kill.
         #[prost(message, tag = "302")]
         SessionKill(super::SessionKillRequest),
+        /// Session.Attach. It is the last request on its connection.
+        #[prost(message, tag = "303")]
+        SessionAttach(super::SessionAttachRequest),
+        /// Session.Detach.
+        #[prost(message, tag = "304")]
+        SessionDetach(super::SessionDetachRequest),
+        /// Session.Input.
+        #[prost(message, tag = "305")]
+        SessionInput(super::SessionInputRequest),
+        /// Session.Resize.
+        #[prost(message, tag = "306")]
+        SessionResize(super::SessionResizeRequest),
     }
 }
 /// The response from the daemon to one request.
@@ -251,7 +349,10 @@ pub struct Response {
     pub id: u64,
     /// The result of the request. Each new service adds its results here. See
     /// the field number plan at the top of this file.
-    #[prost(oneof = "response::Result", tags = "2, 100, 200, 201, 300, 301, 302")]
+    #[prost(
+        oneof = "response::Result",
+        tags = "2, 100, 200, 201, 300, 301, 302, 303, 304, 305, 306"
+    )]
     pub result: ::core::option::Option<response::Result>,
 }
 /// Nested message and enum types in `Response`.
@@ -281,6 +382,19 @@ pub mod response {
         /// Session.Kill.
         #[prost(message, tag = "302")]
         SessionKill(super::SessionKillResponse),
+        /// Session.Attach. After this response, the connection carries terminal
+        /// frames.
+        #[prost(message, tag = "303")]
+        SessionAttach(super::SessionAttachResponse),
+        /// Session.Detach.
+        #[prost(message, tag = "304")]
+        SessionDetach(super::SessionDetachResponse),
+        /// Session.Input.
+        #[prost(message, tag = "305")]
+        SessionInput(super::SessionInputResponse),
+        /// Session.Resize.
+        #[prost(message, tag = "306")]
+        SessionResize(super::SessionResizeResponse),
     }
 }
 /// A message from the daemon that no request asked for.

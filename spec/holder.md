@@ -1,6 +1,8 @@
 # Holder protocol
 
-**Status: OUTLINE.** The holder protocol is not designed. This document gives the rules that are already decided and the open questions. The [roadmap](https://github.com/nomux-sh/docs/blob/main/src/content/docs/project/roadmap.md) gives the plan.
+**Status: IMPLEMENTED, version 1.1.** The holder protocol is defined and implemented in the `nomux` repository. Its specification is [`docs/holder.md`](https://github.com/nomux-sh/nomux/blob/main/docs/holder.md) there: messages, encoding, ring buffer layout, discovery files, lease and version rule. The code is the crate `nomux-holder-protocol`. This document gives the versioning rule and the questions that are still open.
+
+The holder protocol is not a part of the `nomux-proto` crate. It has a small binary encoding of its own, because the holder must stay small and has no async runtime.
 
 ## Purpose
 
@@ -27,29 +29,27 @@ The effects on the design:
 - A daemon can meet a holder that is much older than the daemon. Thus the daemon must read the holder protocol version before it sends other messages.
 - Only a new major product version can remove an old holder protocol version.
 
-## Known design constraints
+## Decided
 
-These constraints come from the architecture. They are inputs for the design, not a specification.
+The specification in the `nomux` repository answers these questions:
 
-- **Transport.** A Unix socket carries control messages. A ring buffer of fixed size in shared memory (`memfd`) carries terminal data. The daemon maps the buffer and reads it without a copy.
-- **Discovery.** Each holder has a directory `~/.nomux/run/<id>/` with the files `pid`, `sock`, and `ready`. The `pid` file contains the process ID and the process start time. The holder writes `ready` last.
-- **Single writer lease.** Only one daemon at a time can write to a holder. During a daemon upgrade, the new daemon takes the lease from the old daemon.
-- **Journal and checkpoint.** The holder writes screen changes to an ordered journal and writes checkpoints at intervals. Each session has an epoch and a sequence number.
-- **No runtime.** The holder has no async runtime. The protocol must be simple to implement with blocking I/O and `poll`.
-- **State.** The holder keeps the smallest copy of the state of its session. When the daemon connects again, the daemon reads this state from the holder.
+- **Encoding.** A small binary encoding with length-prefixed messages, not protobuf.
+- **Version exchange.** The holder sends its protocol version in the first message on the socket. A minor version adds messages. A holder answers an unknown request with a defined error.
+- **Transport.** A Unix socket carries control messages. A ring buffer of fixed size in shared memory carries terminal output. The holder passes a read-only descriptor of the memory to the daemon.
+- **Ring buffer layout.** A header with a claimed and a committed write position. A reader that is too slow detects that it was overrun.
+- **Relation to the terminal frame header.** The ring buffer contains raw terminal output. The daemon adds the frame header from [frame.md](frame.md) when it sends data to clients.
+- **Lease.** One connection at a time can write. The last request for the lease wins.
+- **Discovery.** Each holder has a private directory with the files `pid` (process ID and process start time), `sock` and `ready`. The holder writes `ready` last.
+- **Input, resize and signals.** One request for each.
+- **Screen redraw.** The holder keeps the screen state and gives the byte sequence that reproduces the screen, together with the ring buffer position that the sequence corresponds to.
 
 ## Open questions
 
-1. **Encoding.** Does the control part use protobuf (and thus this repository's schemas), or a smaller fixed binary encoding? The holder must stay small and must be able to decode messages from all later daemon versions of the same major version.
-2. **Version exchange.** Where is the holder protocol version stored: in the first message on the socket, in a discovery file, or in both? The daemon must know the version before it sends a message.
-3. **Ring buffer layout.** The header of the shared memory region, the size, the read and write positions, and the rule for a reader that is too slow.
-4. **Relation to the terminal frame header.** Does the ring buffer or the journal contain the frame header from [frame.md](frame.md), or does the daemon add the header when it sends data to clients?
-5. **Lease.** The messages to take, renew, and release the single writer lease, and the behavior when two daemons request the lease at the same time.
-6. **Epoch and sequence number.** Which event starts a new epoch. The unit of the sequence number. The same question is open in [frame.md](frame.md).
-7. **Journal and checkpoint format.** The format on disk, and whether this format is a part of the holder protocol or private to the holder.
-8. **Input and resize.** The messages for input bytes, window size, and signals, and the report of the input line state (OSC 133 B and C).
-9. **Warm pool.** The message that assigns a session to a holder from the warm pool.
-10. **Compatibility tests.** How CI tests a new daemon with each older holder version of the same major version.
+1. **Epoch and sequence number.** Which event starts a new epoch. The unit of the sequence number. The same question is open in [frame.md](frame.md).
+2. **Journal and checkpoint format.** The format on disk, and whether this format is a part of the holder protocol or private to the holder.
+3. **Input line state.** The report of the prompt marks (OSC 133 B and C) and of the program status (OSC 7501).
+4. **Warm pool.** The message that assigns a session to a holder from the warm pool.
+5. **Compatibility tests.** How CI tests a new daemon with each older holder version of the same major version.
 
 ## Not in this document
 

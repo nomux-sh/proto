@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [git-cliff](https://git-cliff.org) writes this file from the commit subjects.
 To see the changes that are not in a version, run `git cliff --unreleased`.
 
+## [0.3.0] - 2026-11-25
+
+### Added
+
+- Add the attach, detach, input and resize messages
+- Add the End frame and the epoch of this version
+
+### Documentation
+
+- Point the holder protocol outline to its specification
+- Specify the terminal data path of an attach
 ## [0.2.0] - 2026-11-25
 
 ### Added

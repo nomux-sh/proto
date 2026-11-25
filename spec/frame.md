@@ -5,6 +5,8 @@
 This document specifies the binary frames that carry terminal data: the fixed header, the payload of each frame kind, and the terminal data path between the daemon and a client that is attached to a Session.
 The implementation of the header and of the `End` payload is the module `frame` of the crate `nomux-proto`.
 
+The daemon has the output of a Session in two places: the ring buffer of the holder has the last bytes, and the journal on disk has the bytes before them. The holder writes the two. [`docs/holder.md`](https://github.com/nomux-sh/nomux/blob/main/docs/holder.md) of the `nomux` repository specifies them.
+
 ## Scope
 
 Terminal data does not use protobuf. Terminal data moves in binary frames on the terminal data channel and on the input channel.
@@ -92,7 +94,7 @@ Each frame of an attach, in the two directions, has this handle.
 
 ### `epoch`
 
-The epoch of the Session. One epoch is one continuous numbering of the output of a Session.
+The epoch of the bytes of the frame. One epoch is one continuous numbering of the output of a Session.
 See [Epoch and sequence number](#epoch-and-sequence-number).
 
 ### `length`
@@ -119,9 +121,11 @@ See [Epoch and sequence number](#epoch-and-sequence-number).
 | 5     | `Credit`         | client to daemon | The receiver gives flow-control credit to the sender. Not sent in this version. |
 | 6     | `Input`          | client to daemon | Input bytes for a Session. Used on the input channel. |
 | 7     | `End`            | daemon to client | The attach ended. It is the last frame of an attach. |
+| 8     | `HistoryGap`     | daemon to client | The daemon does not have a part of the output that the client asked for. Capability flag `output_history`. |
+| 9     | `Restored`       | daemon to client | The command of the Session started again in a new epoch. Capability flag `output_history`. |
 
-Values 8 to 255 are not assigned.
-The kinds 1 to 7 are the base set of control protocol version 1. A kind with a larger value needs a capability flag: a peer must not send it unless the other peer advertised the related capability flag in the handshake.
+Values 10 to 255 are not assigned.
+The kinds 1 to 7 are the base set of control protocol version 1. A kind with a larger value needs a capability flag: a peer must not send it unless the other peer advertised the related capability flag in the handshake. [capabilities.md](capabilities.md) is the registry of the flags.
 
 ## Payloads
 
@@ -166,6 +170,29 @@ The payload has 8 bytes. All integers are little-endian.
 `seq` is the sequence number after the last output byte that the daemon sent.
 A receiver ignores the bytes after the fields that it knows, and it treats a `reason` that it does not know as an end without more data.
 
+### `HistoryGap`
+
+The payload is empty. A receiver ignores the payload bytes of a later version.
+
+The frame tells the client that output is gone: the daemon does not have the output bytes between the last byte that the client has and the next frame. The client cannot get these bytes from the daemon.
+
+- `epoch` is the epoch of the bytes that are gone, and `seq` is the sequence number of the first byte that is gone.
+- The next frame starts a snapshot of the same epoch, or it is `Restored`.
+
+A snapshot without a `HistoryGap` before it also skips output: see [Slow client](#slow-client). The daemon still has that output, and the client can read it with `Session.Capture`.
+
+### `Restored`
+
+The payload is empty. A receiver ignores the payload bytes of a later version.
+
+The frame tells the client that the command of the Session started again after the Session was dormant.
+
+- `epoch` is the new epoch, and `seq` is `0`.
+- Each frame before this frame is of an earlier epoch: it is output from before the restore. Each frame after it is of the new epoch.
+- The next frame starts a snapshot.
+
+A client shows the user a mark at this place: the output before it is from the command that stopped, and the processes of that command do not run.
+
 ### `ScreenDiff`, `Ack` and `Credit`
 
 The payloads of these kinds are not defined. A peer does not send them in this version.
@@ -189,7 +216,7 @@ An attach uses two channels. Each channel is a reliable, ordered byte stream in 
 
 | Channel | Direction | Frames |
 |---------|-----------|--------|
-| Terminal data channel | daemon to client | `ScreenSnapshot`, `Output`, `End` |
+| Terminal data channel | daemon to client | `ScreenSnapshot`, `Output`, `HistoryGap`, `Restored`, `End` |
 | Input channel | client to daemon | `Input` |
 
 The two channels are independent: a channel that is full does not stop the other channel.
@@ -198,10 +225,11 @@ The two channels are independent: a channel that is full does not stop the other
 ### Start of an attach
 
 1. The client sends `SessionAttachRequest` on the control channel.
-2. If the request has a window size, the daemon gives that size to the Session. [control.md](control.md) has the rule for the window size.
-3. The daemon sends `SessionAttachResponse` with the handle and the current epoch.
-4. The daemon sends the screen: one snapshot. If the request asks to resume and the daemon can do it, the daemon sends no snapshot. See [Resume](#resume).
-5. The daemon sends each output byte from the `seq` of the snapshot in `Output` frames, as the command writes it. The daemon sends output without a request from the client.
+2. If the Session is dormant, the daemon starts its command again. See [Restore](#restore).
+3. If the request has a window size, the daemon gives that size to the Session. [control.md](control.md) has the rule for the window size.
+4. The daemon sends `SessionAttachResponse` with the handle and the current epoch.
+5. The daemon sends the screen: one snapshot. If the request asks to resume and the daemon can do it, the daemon sends no snapshot. See [Resume](#resume).
+6. The daemon sends each output byte from the `seq` of the snapshot in `Output` frames, as the command writes it. The daemon sends output without a request from the client.
 
 After a snapshot with the sequence number `S`, the first `Output` frame has the `seq` `S`. An `Output` frame with the `seq` `N` and the `length` `L` is followed by an `Output` frame with the `seq` `N + L`, or by a new snapshot.
 Thus a client gets each output byte one time: there is no gap and no repeat between a snapshot and the output after it.
@@ -213,9 +241,11 @@ Thus a client gets each output byte one time: there is no gap and no repeat betw
 - A Session gets a new, larger epoch only when the numbering starts again at `0`. A client must then discard the sequence number that it has.
 - The value `0` is not an epoch. It means "no epoch".
 
-In this version, each Session has the epoch `1` for all of its life (`nomux_proto::frame::FIRST_EPOCH`). The sequence numbers continue when the daemon stops and a new daemon starts, because the holder of the Session counts the bytes.
+The holder of a Session counts the bytes and gives the epoch. Thus the sequence numbers continue when the daemon stops and a new daemon starts.
 
-A later version keeps the output in a journal and can start a Session again after a restart of the Host. That version increases the epoch when it cannot continue the numbering. The fields and their meaning stay the same.
+- The first epoch of a Session is `1` (`nomux_proto::frame::FIRST_EPOCH`).
+- A Session gets the next epoch when a new holder starts for it: a restore of a dormant Session. That is the only event that starts the numbering again.
+- Each frame has the epoch of its bytes in the `epoch` field. `SessionAttachResponse.epoch` is the current epoch of the Session. A frame of an earlier epoch comes only before a `Restored` frame.
 
 ### Resume
 
@@ -225,17 +255,53 @@ The daemon resumes if these conditions are true:
 
 - `epoch` is the current epoch of the Session.
 - `from_seq` is not larger than the sequence number of the next output byte.
-- The daemon still has each output byte from `from_seq` on.
+- The daemon still has each output byte from `from_seq` on, in the ring buffer or in the journal.
 
-Then the daemon sends no snapshot. The first `Output` frame has the `seq` `from_seq`.
+Then the daemon sends no snapshot. The first `Output` frame has the `seq` `from_seq`. The daemon sends the bytes of the journal first and continues with the bytes of the ring buffer. The client sees no difference: each `Output` frame continues the frame before it.
+
 If a condition is false, the daemon sends a snapshot, as for a client that sends the epoch `0`. The client learns the result from the kind of the first frame.
 
-What a client can resume in this version:
+A client can resume only if it kept its terminal state from the earlier attach. A client that starts with a new terminal sends the epoch `0`.
+A resume works after a restart of the daemon, because the holder keeps the ring buffer, the journal and the sequence numbers.
 
-- The daemon has only the last output bytes of a Session: the ring buffer of the holder, which has 262144 bytes by default. A client that was away for more output than that gets a snapshot.
-- A resume works after a restart of the daemon, because the holder keeps the ring buffer and the sequence numbers.
-- A client can resume only if it kept its terminal state from the earlier attach. A client that starts with a new terminal sends the epoch `0`.
-- The scrollback is not in a snapshot. Output that the client did not receive and that is no longer on the screen is lost for that client.
+#### Output that the journal does not have
+
+The journal of a Session has a size limit, and the holder removes the oldest output. A file of the journal can also be damaged. Thus the daemon can have the newest output of an epoch and not the byte at `from_seq`.
+
+| Capability flag `output_history` | What the daemon sends |
+|----------------------------------|-----------------------|
+| Active | `HistoryGap` with the `seq` `from_seq`. Then the oldest state that the journal has after the gap: one snapshot with the `seq` `S` of the oldest checkpoint, and each output byte from `S` on, first from the journal and then from the ring buffer. If the journal has no checkpoint, the snapshot is the current screen. |
+| Not active | One snapshot of the current screen, and the output from its `seq` on. |
+
+In the two cases the client gets no byte between `from_seq` and the `seq` of the snapshot.
+
+#### An earlier epoch
+
+A client that was attached before a restore has a position in an earlier epoch. If the capability flag `output_history` is active and `epoch` is smaller than the current epoch, the daemon sends these frames:
+
+1. The output of the epoch `epoch` from `from_seq` to the end of that epoch, in `Output` frames that have that epoch. The output stops at the first byte that the journal does not have: the daemon then sends `HistoryGap` and no more output of that epoch.
+2. `Restored` with the current epoch.
+3. One snapshot of the current epoch, and the output from its `seq` on.
+
+The daemon does not send the output of an epoch between the two. Without the capability flag, the daemon sends only the snapshot.
+
+### Restore
+
+A dormant Session has no process: its holder is gone, and its command did not end. [control.md](control.md) has the states of a Session. An attach to a dormant Session starts the command again, in the next epoch.
+
+If the capability flag `output_history` is active and the request has the epoch `0`, the client gets the end of the earlier epoch before the new screen:
+
+1. One snapshot of the earlier epoch: the last checkpoint that the journal has for it.
+2. The output of the earlier epoch from the `seq` of that snapshot to its end.
+3. `Restored` with the new epoch.
+4. One snapshot of the new epoch, and the output from its `seq` on.
+
+If the journal has no checkpoint of the earlier epoch, the daemon starts at step 3. The frames of steps 1 and 2 have the earlier epoch in the `epoch` field.
+A client that sends an earlier epoch gets the frames of [An earlier epoch](#an-earlier-epoch).
+
+The checkpoints of a journal are 1 MiB of output apart. Thus steps 1 and 2 give the last screen of the earlier epoch and 1 MiB of its output at most. A client reads the output before that with `Session.Capture`.
+
+Only the attach that starts the command again gets these frames without a request. A later attach with the epoch `0` gets the snapshot of the current epoch.
 
 ### Slow client
 
@@ -243,7 +309,7 @@ The daemon keeps no queue of output for a client.
 
 - The daemon reads the output for a client only when the terminal data channel of that client can take more bytes. It holds one frame of output for each attach at most.
 - The holder never waits for a client or for the daemon. It writes the output into a ring buffer of a fixed size and overwrites the oldest bytes.
-- If the bytes that a client needs next are no longer in the ring buffer, the client is behind. The daemon then sends a new snapshot and continues with `Output` frames from the `seq` of that snapshot. This `seq` is larger than the sequence number that the client expected: the client did not get the bytes between the two, and the snapshot has their effect.
+- If the bytes that a client needs next are no longer in the ring buffer, the client is behind. The daemon then sends a new snapshot and continues with `Output` frames from the `seq` of that snapshot. This `seq` is larger than the sequence number that the client expected: the client did not get the bytes between the two, and the snapshot has their effect. The daemon sends no `HistoryGap`: the journal has these bytes, and the client can read them with `Session.Capture`.
 
 Thus a client that is slow gets the latest screen and not each byte, a slow client does not make the daemon use more memory, and a client that keeps up gets each byte.
 Each attach reads the ring buffer independently: a slow client changes nothing for a different client of the same Session.
@@ -267,7 +333,7 @@ An attach ends in one of these manners:
 |-------|--------------------------|
 | The command of the Session ends | The output that remains, then `End` with `Exited` or `Signaled`. The daemon closes the terminal data channel. |
 | A `Session.Detach` request names the Session | `End` with `Detached`. The daemon closes the terminal data channel. |
-| The Session ends and the daemon cannot get the exit status | `End` with `Lost`. |
+| The holder of the Session is gone and the daemon cannot get the exit status | `End` with `Lost`. If the command ran, the Session is dormant then. |
 | The client closes the channels | Nothing. This is how a client detaches itself. |
 | The daemon stops or fails | The channels close without an `End` frame. The Session continues, and the client can attach again. |
 
@@ -296,7 +362,7 @@ On the Unix socket, the handle of an attach is always `1`, because a connection 
 These items are not decided. The [roadmap](https://github.com/nomux-sh/docs/blob/main/src/content/docs/project/roadmap.md) gives the plan.
 
 - The payloads of `ScreenDiff`, `Ack` and `Credit`, and a second send mode in which a client that is behind gets only the rows that changed.
-- The journal: resume for a client that was away for more output than the ring buffer has, and the scrollback.
+- The output of the epochs between the epoch of a client and the current epoch.
 - A message that tells the attached clients a new window size of the Session.
 - The channels of an attach on SSH and on QUIC, and more than one attach on one connection.
 - The size of `session`, `epoch`, and `seq`. For example, a larger `session` field for a permanent identifier.

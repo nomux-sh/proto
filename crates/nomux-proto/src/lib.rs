@@ -1,6 +1,6 @@
 //! The nomux wire protocol.
 //!
-//! This crate has three parts:
+//! This crate has four parts:
 //!
 //! - [`wire::v1`]: the control messages: the envelope, the handshake, the
 //!   Host service, the Session service and the Ext service. `prost`
@@ -9,6 +9,7 @@
 //!   payload of the `End` frame.
 //! - [`compatibility`]: the control protocol version and the version rule of
 //!   the handshake.
+//! - [`capabilities`]: the names of the capability flags.
 //!
 //! The generated code is a part of the crate. A build of this crate does not
 //! start `buf` or `protoc`.
@@ -16,6 +17,7 @@
 //! Versions earlier than 1.0.0 are pre-releases: interfaces can change
 //! between minor versions. The frame header layout is a draft.
 
+pub mod capabilities;
 pub mod compatibility;
 pub mod frame;
 

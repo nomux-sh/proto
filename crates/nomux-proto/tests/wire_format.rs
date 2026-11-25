@@ -3,14 +3,18 @@
 //! Field numbers, wire types and enum values are permanent. Each test has the
 //! expected bytes or values as literals, thus a changed schema fails the test.
 
+use nomux_proto::capabilities::OUTPUT_HISTORY;
 use nomux_proto::compatibility::EXIT_CODE_VERSION_INCOMPATIBLE;
 use nomux_proto::wire::v1::{
     ClientKind, Envelope, Error, ErrorCode, Event, Hello, HostInfoRequest, HostInfoResponse,
-    HostStopRequest, HostStopResponse, Request, Response, Session, SessionAttachRequest,
-    SessionAttachResponse, SessionCreateRequest, SessionCreateResponse, SessionDetachRequest,
-    SessionDetachResponse, SessionInputRequest, SessionInputResponse, SessionKillRequest,
+    HostStopRequest, HostStopResponse, Request, Response, RestorePolicy, Session,
+    SessionAttachRequest, SessionAttachResponse, SessionCaptureRequest, SessionCaptureResponse,
+    SessionCreateRequest, SessionCreateResponse, SessionDetachRequest, SessionDetachResponse,
+    SessionExit, SessionInputRequest, SessionInputResponse, SessionKillRequest,
     SessionKillResponse, SessionListRequest, SessionListResponse, SessionResizeRequest,
-    SessionResizeResponse, SessionState, Welcome, envelope, request, response,
+    SessionResizeResponse, SessionSetRestorePolicyRequest, SessionSetRestorePolicyResponse,
+    SessionStartRequest, SessionStartResponse, SessionState, Welcome, envelope, request, response,
+    session_exit,
 };
 use prost::Message;
 
@@ -143,6 +147,22 @@ fn session_state_values_are_stable() {
     assert_eq!(SessionState::Unspecified as i32, 0);
     assert_eq!(SessionState::Running as i32, 1);
     assert_eq!(SessionState::Unreachable as i32, 2);
+    assert_eq!(SessionState::Dormant as i32, 3);
+    assert_eq!(SessionState::Ended as i32, 4);
+    assert_eq!(SessionState::Damaged as i32, 5);
+}
+
+#[test]
+fn restore_policy_values_are_stable() {
+    assert_eq!(RestorePolicy::Unspecified as i32, 0);
+    assert_eq!(RestorePolicy::Auto as i32, 1);
+    assert_eq!(RestorePolicy::OnFocus as i32, 2);
+    assert_eq!(RestorePolicy::Manual as i32, 3);
+}
+
+#[test]
+fn the_name_of_a_capability_flag_is_the_name_of_the_registry() {
+    assert_eq!(OUTPUT_HISTORY, "output_history");
 }
 
 fn request_bytes(body: request::Body) -> Vec<u8> {
@@ -197,6 +217,7 @@ fn session_service_wire_bytes_are_stable() {
         id: "s".to_owned(),
         state: SessionState::Unreachable.into(),
         pid: 9,
+        ..Session::default()
     };
     let session_bytes = [
         0x0a, 0x01, b's', // field 1, bytes: id = "s"
@@ -219,8 +240,20 @@ fn session_service_wire_bytes_are_stable() {
         ],
     );
     assert_eq!(
-        request_bytes(request::Body::SessionList(SessionListRequest {})),
+        request_bytes(request::Body::SessionList(SessionListRequest {
+            include_ended: false,
+        })),
         [0x08, 0x01, 0xea, 0x12, 0x00], // id = 1; field 301, bytes: empty
+    );
+    assert_eq!(
+        request_bytes(request::Body::SessionList(SessionListRequest {
+            include_ended: true,
+        })),
+        [
+            0x08, 0x01, // id = 1
+            0xea, 0x12, 0x02, // field 301, bytes: session_list
+            0x08, 0x01, // field 1, varint: include_ended = true
+        ],
     );
     assert_eq!(
         request_bytes(request::Body::SessionKill(SessionKillRequest {
@@ -343,6 +376,133 @@ fn terminal_requests_of_the_session_service_have_stable_wire_bytes() {
     assert_eq!(
         response_bytes(response::Result::SessionResize(SessionResizeResponse {})),
         [0x08, 0x01, 0x92, 0x13, 0x00],
+    );
+}
+
+#[test]
+fn the_description_of_a_session_has_stable_wire_bytes() {
+    let session = Session {
+        id: "s".to_owned(),
+        state: SessionState::Ended.into(),
+        pid: 0,
+        command: vec!["a".to_owned(), "b".to_owned()],
+        working_directory: "/".to_owned(),
+        rows: 24,
+        columns: 80,
+        started_at: 5,
+        epoch: 2,
+        restore_policy: RestorePolicy::Manual.into(),
+        exit: Some(SessionExit {
+            ended_at: 6,
+            status: Some(session_exit::Status::Signal(9)),
+        }),
+        damage: "d".to_owned(),
+    };
+    assert_eq!(
+        session.encode_to_vec(),
+        [
+            0x0a, 0x01, b's', // field 1, bytes: id = "s"
+            0x10, 0x04, // field 2, varint: state = ENDED
+            0x22, 0x01, b'a', // field 4, bytes: command = "a"
+            0x22, 0x01, b'b', // field 4, bytes: command = "b"
+            0x2a, 0x01, b'/', // field 5, bytes: working_directory = "/"
+            0x30, 0x18, // field 6, varint: rows = 24
+            0x38, 0x50, // field 7, varint: columns = 80
+            0x40, 0x05, // field 8, varint: started_at = 5
+            0x48, 0x02, // field 9, varint: epoch = 2
+            0x50, 0x03, // field 10, varint: restore_policy = MANUAL
+            0x5a, 0x04, // field 11, bytes: exit
+            0x08, 0x06, // SessionExit field 1, varint: ended_at = 6
+            0x18, 0x09, // SessionExit field 3, varint: signal = 9
+            0x62, 0x01, b'd', // field 12, bytes: damage = "d"
+        ],
+    );
+    let exited = SessionExit {
+        ended_at: 0,
+        status: Some(session_exit::Status::ExitCode(0)),
+    };
+    // An exit code of 0 is on the wire: it is not the same as no status.
+    assert_eq!(exited.encode_to_vec(), [0x10, 0x00]);
+}
+
+#[test]
+fn restore_requests_of_the_session_service_have_stable_wire_bytes() {
+    assert_eq!(
+        request_bytes(request::Body::SessionStart(SessionStartRequest {
+            id: "s".to_owned(),
+        })),
+        [
+            0x08, 0x01, // id = 1
+            0x9a, 0x13, 0x03, // field 307, bytes: session_start
+            0x0a, 0x01, b's', // field 1, bytes: id = "s"
+        ],
+    );
+    assert_eq!(
+        response_bytes(response::Result::SessionStart(SessionStartResponse {
+            session: None,
+        })),
+        [0x08, 0x01, 0x9a, 0x13, 0x00],
+    );
+
+    assert_eq!(
+        request_bytes(request::Body::SessionCapture(SessionCaptureRequest {
+            id: "s".to_owned(),
+            epoch: 2,
+            before_seq: Some(0),
+            max_bytes: 300,
+        })),
+        [
+            0x08, 0x01, // id = 1
+            0xa2, 0x13, 0x0a, // field 308, bytes: session_capture
+            0x0a, 0x01, b's', // field 1, bytes: id = "s"
+            0x10, 0x02, // field 2, varint: epoch = 2
+            0x18, 0x00, // field 3, varint: before_seq = 0, which is not "absent"
+            0x20, 0xac, 0x02, // field 4, varint: max_bytes = 300
+        ],
+    );
+    assert_eq!(
+        request_bytes(request::Body::SessionCapture(SessionCaptureRequest {
+            id: String::new(),
+            epoch: 0,
+            before_seq: None,
+            max_bytes: 0,
+        })),
+        [0x08, 0x01, 0xa2, 0x13, 0x00],
+    );
+    assert_eq!(
+        response_bytes(response::Result::SessionCapture(SessionCaptureResponse {
+            epoch: 2,
+            seq: 300,
+            data: vec![0x1b],
+        })),
+        [
+            0x08, 0x01, // id = 1
+            0xa2, 0x13, 0x08, // field 308, bytes: session_capture
+            0x08, 0x02, // field 1, varint: epoch = 2
+            0x10, 0xac, 0x02, // field 2, varint: seq = 300
+            0x1a, 0x01, 0x1b, // field 3, bytes: data
+        ],
+    );
+
+    assert_eq!(
+        request_bytes(request::Body::SessionSetRestorePolicy(
+            SessionSetRestorePolicyRequest {
+                id: "s".to_owned(),
+                policy: RestorePolicy::Auto.into(),
+            }
+        )),
+        [
+            0x08, 0x01, // id = 1
+            0xaa, 0x13, 0x05, // field 309, bytes: session_set_restore_policy
+            0x0a, 0x01, b's', // field 1, bytes: id = "s"
+            0x10, 0x01, // field 2, varint: policy = AUTO
+        ],
+    );
+    assert_eq!(
+        response_bytes(response::Result::SessionSetRestorePolicy(
+            SessionSetRestorePolicyResponse {}
+        )),
+        [0x08, 0x01, 0xaa, 0x13, 0x00],
     );
 }
 

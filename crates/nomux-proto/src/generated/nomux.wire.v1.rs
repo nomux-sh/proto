@@ -390,6 +390,30 @@ pub struct HostStopRequest {}
 /// connection and exits.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct HostStopResponse {}
+/// How and when the command of a Session ended.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SessionExit {
+    /// When the command ended: seconds after the Unix epoch.
+    #[prost(uint64, tag = "1")]
+    pub ended_at: u64,
+    /// How the command ended. The daemon sets no field if it does not know.
+    #[prost(oneof = "session_exit::Status", tags = "2, 3")]
+    pub status: ::core::option::Option<session_exit::Status>,
+}
+/// Nested message and enum types in `SessionExit`.
+pub mod session_exit {
+    /// How the command ended. The daemon sets no field if it does not know.
+    #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Oneof)]
+    pub enum Status {
+        /// The exit code of the command.
+        #[prost(int32, tag = "2")]
+        ExitCode(i32),
+        /// The number of the signal that ended the command, as the operating
+        /// system of the Host gives it.
+        #[prost(int32, tag = "3")]
+        Signal(i32),
+    }
+}
 /// One Session on the Host.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Session {
@@ -401,9 +425,44 @@ pub struct Session {
     #[prost(enumeration = "SessionState", tag = "2")]
     pub state: i32,
     /// The process ID of the command on the Host. The value is 0 if the daemon
-    /// does not know it.
+    /// does not know it or if the Session has no process.
     #[prost(uint32, tag = "3")]
     pub pid: u32,
+    /// The program of the command and its arguments. A byte sequence that is not
+    /// UTF-8 has U+FFFD in its place. The list is empty if the daemon does not
+    /// know the command.
+    #[prost(string, repeated, tag = "4")]
+    pub command: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// The working directory of the command. A byte sequence that is not UTF-8
+    /// has U+FFFD in its place. The value is empty if the daemon does not know
+    /// it.
+    #[prost(string, tag = "5")]
+    pub working_directory: ::prost::alloc::string::String,
+    /// The number of rows of the window of the Session. The value is 0 if the
+    /// daemon does not know it.
+    #[prost(uint32, tag = "6")]
+    pub rows: u32,
+    /// The number of columns of the window of the Session.
+    #[prost(uint32, tag = "7")]
+    pub columns: u32,
+    /// When the command started in the current epoch: seconds after the Unix
+    /// epoch. The value is 0 if the daemon does not know it.
+    #[prost(uint64, tag = "8")]
+    pub started_at: u64,
+    /// The current epoch of the Session, or its last epoch if the Session has
+    /// no process. The value is 0 if the daemon does not know it.
+    #[prost(uint32, tag = "9")]
+    pub epoch: u32,
+    /// When the daemon starts the command again after it became dormant.
+    #[prost(enumeration = "RestorePolicy", tag = "10")]
+    pub restore_policy: i32,
+    /// How the command ended. Only if `state` is `SESSION_STATE_ENDED`.
+    #[prost(message, optional, tag = "11")]
+    pub exit: ::core::option::Option<SessionExit>,
+    /// Why the daemon cannot read a part of the state files of the Session, in
+    /// English for the user. The value is empty if the files are not damaged.
+    #[prost(string, tag = "12")]
+    pub damage: ::prost::alloc::string::String,
 }
 /// Session.Create: starts a new Session.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -424,9 +483,14 @@ pub struct SessionCreateResponse {
     #[prost(message, optional, tag = "1")]
     pub session: ::core::option::Option<Session>,
 }
-/// Session.List: asks for all Sessions on the Host.
+/// Session.List: asks for the Sessions on the Host.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct SessionListRequest {}
+pub struct SessionListRequest {
+    /// If the value is true, the response also has the Sessions in the state
+    /// `SESSION_STATE_ENDED`.
+    #[prost(bool, tag = "1")]
+    pub include_ended: bool,
+}
 /// The reply to `SessionListRequest`.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SessionListResponse {
@@ -435,7 +499,8 @@ pub struct SessionListResponse {
     pub sessions: ::prost::alloc::vec::Vec<Session>,
 }
 /// Session.Kill: ends a Session. The daemon answers after the command of the
-/// Session has ended.
+/// Session has ended. For a dormant or a damaged Session, the daemon removes
+/// the Session and its state.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct SessionKillRequest {
     /// The identifier of the Session.
@@ -450,6 +515,9 @@ pub struct SessionKillResponse {}
 /// After the response, the connection carries terminal frames and no control
 /// messages: spec/frame.md has the terminal data path. A client ends its
 /// attach when it closes the connection.
+///
+/// An attach to a dormant Session starts its command again, if the restore
+/// policy of the Session is not `RESTORE_POLICY_MANUAL`.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct SessionAttachRequest {
     /// The identifier of the Session.
@@ -528,6 +596,74 @@ pub struct SessionResizeRequest {
 /// The reply to `SessionResizeRequest`.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct SessionResizeResponse {}
+/// Session.Start: starts the command of a dormant Session again, in a new
+/// epoch, with the command, the working directory and the window size that
+/// the Session had. The request succeeds without a change for a Session whose
+/// command runs.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SessionStartRequest {
+    /// The identifier of the Session.
+    #[prost(string, tag = "1")]
+    pub id: ::prost::alloc::string::String,
+}
+/// The reply to `SessionStartRequest`.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SessionStartResponse {
+    /// The Session after the start.
+    #[prost(message, optional, tag = "1")]
+    pub session: ::core::option::Option<Session>,
+}
+/// Session.Capture: asks for output bytes of a Session that are before a
+/// position. A client reads the scrollback with it, one part for each
+/// request, from the newest output to the oldest. spec/control.md has the
+/// rules.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SessionCaptureRequest {
+    /// The identifier of the Session.
+    #[prost(string, tag = "1")]
+    pub id: ::prost::alloc::string::String,
+    /// The epoch of the output. If the value is 0, the daemon uses the newest
+    /// epoch of the Session.
+    #[prost(uint32, tag = "2")]
+    pub epoch: u32,
+    /// The sequence number after the last output byte that the client asks
+    /// for. If the field is absent, it is the end of the output of the epoch.
+    #[prost(uint64, optional, tag = "3")]
+    pub before_seq: ::core::option::Option<u64>,
+    /// The largest number of bytes of the response. The daemon gives 262144
+    /// bytes at most. If the value is 0, the limit is 262144.
+    #[prost(uint32, tag = "4")]
+    pub max_bytes: u32,
+}
+/// The reply to `SessionCaptureRequest`.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SessionCaptureResponse {
+    /// The epoch of `data`.
+    #[prost(uint32, tag = "1")]
+    pub epoch: u32,
+    /// The sequence number of the first byte of `data`. If `data` is empty, it
+    /// is the position before which the daemon has no output.
+    #[prost(uint64, tag = "2")]
+    pub seq: u64,
+    /// The output bytes, as the command wrote them. They end at `before_seq`,
+    /// or earlier if the daemon does not have the bytes up to that position.
+    #[prost(bytes = "vec", tag = "3")]
+    pub data: ::prost::alloc::vec::Vec<u8>,
+}
+/// Session.SetRestorePolicy: sets when the daemon starts the command of a
+/// Session again after the Session became dormant.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SessionSetRestorePolicyRequest {
+    /// The identifier of the Session.
+    #[prost(string, tag = "1")]
+    pub id: ::prost::alloc::string::String,
+    /// The new policy. `RESTORE_POLICY_UNSPECIFIED` is not valid.
+    #[prost(enumeration = "RestorePolicy", tag = "2")]
+    pub policy: i32,
+}
+/// The reply to `SessionSetRestorePolicyRequest`.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SessionSetRestorePolicyResponse {}
 /// The state of a Session, as the daemon knows it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -539,6 +675,16 @@ pub enum SessionState {
     /// The holder of the Session runs, but the daemon has no connection to it.
     /// The daemon tries to connect again.
     Unreachable = 2,
+    /// The Session has no process: its holder is gone, and its command did not
+    /// end. The daemon has the description of the Session and its output. A
+    /// restore starts the command again in a new epoch.
+    Dormant = 3,
+    /// The command of the Session ended. The daemon keeps the Session and its
+    /// output for a retention time.
+    Ended = 4,
+    /// The daemon cannot read the description of the Session. `Session.damage`
+    /// has the reason. The Session cannot start again.
+    Damaged = 5,
 }
 impl SessionState {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -550,6 +696,9 @@ impl SessionState {
             Self::Unspecified => "SESSION_STATE_UNSPECIFIED",
             Self::Running => "SESSION_STATE_RUNNING",
             Self::Unreachable => "SESSION_STATE_UNREACHABLE",
+            Self::Dormant => "SESSION_STATE_DORMANT",
+            Self::Ended => "SESSION_STATE_ENDED",
+            Self::Damaged => "SESSION_STATE_DAMAGED",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -558,6 +707,46 @@ impl SessionState {
             "SESSION_STATE_UNSPECIFIED" => Some(Self::Unspecified),
             "SESSION_STATE_RUNNING" => Some(Self::Running),
             "SESSION_STATE_UNREACHABLE" => Some(Self::Unreachable),
+            "SESSION_STATE_DORMANT" => Some(Self::Dormant),
+            "SESSION_STATE_ENDED" => Some(Self::Ended),
+            "SESSION_STATE_DAMAGED" => Some(Self::Damaged),
+            _ => None,
+        }
+    }
+}
+/// When the daemon starts the command of a dormant Session again.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum RestorePolicy {
+    /// The sender did not set the field.
+    Unspecified = 0,
+    /// When the daemon starts.
+    Auto = 1,
+    /// When a client attaches to the Session for the first time.
+    OnFocus = 2,
+    /// Only for a `SessionStartRequest`.
+    Manual = 3,
+}
+impl RestorePolicy {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "RESTORE_POLICY_UNSPECIFIED",
+            Self::Auto => "RESTORE_POLICY_AUTO",
+            Self::OnFocus => "RESTORE_POLICY_ON_FOCUS",
+            Self::Manual => "RESTORE_POLICY_MANUAL",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "RESTORE_POLICY_UNSPECIFIED" => Some(Self::Unspecified),
+            "RESTORE_POLICY_AUTO" => Some(Self::Auto),
+            "RESTORE_POLICY_ON_FOCUS" => Some(Self::OnFocus),
+            "RESTORE_POLICY_MANUAL" => Some(Self::Manual),
             _ => None,
         }
     }
@@ -585,7 +774,7 @@ pub struct Request {
     /// number plan at the top of this file.
     #[prost(
         oneof = "request::Body",
-        tags = "100, 200, 201, 300, 301, 302, 303, 304, 305, 306, 400, 401, 402, 403, 404, 405"
+        tags = "100, 200, 201, 300, 301, 302, 303, 304, 305, 306, 307, 308, 309, 400, 401, 402, 403, 404, 405"
     )]
     pub body: ::core::option::Option<request::Body>,
 }
@@ -625,6 +814,15 @@ pub mod request {
         /// Session.Resize.
         #[prost(message, tag = "306")]
         SessionResize(super::SessionResizeRequest),
+        /// Session.Start.
+        #[prost(message, tag = "307")]
+        SessionStart(super::SessionStartRequest),
+        /// Session.Capture.
+        #[prost(message, tag = "308")]
+        SessionCapture(super::SessionCaptureRequest),
+        /// Session.SetRestorePolicy.
+        #[prost(message, tag = "309")]
+        SessionSetRestorePolicy(super::SessionSetRestorePolicyRequest),
         /// Ext.List.
         #[prost(message, tag = "400")]
         ExtList(super::ExtListRequest),
@@ -655,7 +853,7 @@ pub struct Response {
     /// the field number plan at the top of this file.
     #[prost(
         oneof = "response::Result",
-        tags = "2, 100, 200, 201, 300, 301, 302, 303, 304, 305, 306, 400, 401, 402, 403, 404, 405"
+        tags = "2, 100, 200, 201, 300, 301, 302, 303, 304, 305, 306, 307, 308, 309, 400, 401, 402, 403, 404, 405"
     )]
     pub result: ::core::option::Option<response::Result>,
 }
@@ -699,6 +897,15 @@ pub mod response {
         /// Session.Resize.
         #[prost(message, tag = "306")]
         SessionResize(super::SessionResizeResponse),
+        /// Session.Start.
+        #[prost(message, tag = "307")]
+        SessionStart(super::SessionStartResponse),
+        /// Session.Capture.
+        #[prost(message, tag = "308")]
+        SessionCapture(super::SessionCaptureResponse),
+        /// Session.SetRestorePolicy.
+        #[prost(message, tag = "309")]
+        SessionSetRestorePolicy(super::SessionSetRestorePolicyResponse),
         /// Ext.List.
         #[prost(message, tag = "400")]
         ExtList(super::ExtListResponse),

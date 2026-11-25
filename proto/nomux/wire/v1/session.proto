@@ -20,6 +20,42 @@ enum SessionState {
   // The holder of the Session runs, but the daemon has no connection to it.
   // The daemon tries to connect again.
   SESSION_STATE_UNREACHABLE = 2;
+  // The Session has no process: its holder is gone, and its command did not
+  // end. The daemon has the description of the Session and its output. A
+  // restore starts the command again in a new epoch.
+  SESSION_STATE_DORMANT = 3;
+  // The command of the Session ended. The daemon keeps the Session and its
+  // output for a retention time.
+  SESSION_STATE_ENDED = 4;
+  // The daemon cannot read the description of the Session. `Session.damage`
+  // has the reason. The Session cannot start again.
+  SESSION_STATE_DAMAGED = 5;
+}
+
+// When the daemon starts the command of a dormant Session again.
+enum RestorePolicy {
+  // The sender did not set the field.
+  RESTORE_POLICY_UNSPECIFIED = 0;
+  // When the daemon starts.
+  RESTORE_POLICY_AUTO = 1;
+  // When a client attaches to the Session for the first time.
+  RESTORE_POLICY_ON_FOCUS = 2;
+  // Only for a `SessionStartRequest`.
+  RESTORE_POLICY_MANUAL = 3;
+}
+
+// How and when the command of a Session ended.
+message SessionExit {
+  // When the command ended: seconds after the Unix epoch.
+  uint64 ended_at = 1;
+  // How the command ended. The daemon sets no field if it does not know.
+  oneof status {
+    // The exit code of the command.
+    int32 exit_code = 2;
+    // The number of the signal that ended the command, as the operating
+    // system of the Host gives it.
+    int32 signal = 3;
+  }
 }
 
 // One Session on the Host.
@@ -30,8 +66,34 @@ message Session {
   // The state of the Session.
   SessionState state = 2;
   // The process ID of the command on the Host. The value is 0 if the daemon
-  // does not know it.
+  // does not know it or if the Session has no process.
   uint32 pid = 3;
+  // The program of the command and its arguments. A byte sequence that is not
+  // UTF-8 has U+FFFD in its place. The list is empty if the daemon does not
+  // know the command.
+  repeated string command = 4;
+  // The working directory of the command. A byte sequence that is not UTF-8
+  // has U+FFFD in its place. The value is empty if the daemon does not know
+  // it.
+  string working_directory = 5;
+  // The number of rows of the window of the Session. The value is 0 if the
+  // daemon does not know it.
+  uint32 rows = 6;
+  // The number of columns of the window of the Session.
+  uint32 columns = 7;
+  // When the command started in the current epoch: seconds after the Unix
+  // epoch. The value is 0 if the daemon does not know it.
+  uint64 started_at = 8;
+  // The current epoch of the Session, or its last epoch if the Session has
+  // no process. The value is 0 if the daemon does not know it.
+  uint32 epoch = 9;
+  // When the daemon starts the command again after it became dormant.
+  RestorePolicy restore_policy = 10;
+  // How the command ended. Only if `state` is `SESSION_STATE_ENDED`.
+  SessionExit exit = 11;
+  // Why the daemon cannot read a part of the state files of the Session, in
+  // English for the user. The value is empty if the files are not damaged.
+  string damage = 12;
 }
 
 // Session.Create: starts a new Session.
@@ -50,8 +112,12 @@ message SessionCreateResponse {
   Session session = 1;
 }
 
-// Session.List: asks for all Sessions on the Host.
-message SessionListRequest {}
+// Session.List: asks for the Sessions on the Host.
+message SessionListRequest {
+  // If the value is true, the response also has the Sessions in the state
+  // `SESSION_STATE_ENDED`.
+  bool include_ended = 1;
+}
 
 // The reply to `SessionListRequest`.
 message SessionListResponse {
@@ -60,7 +126,8 @@ message SessionListResponse {
 }
 
 // Session.Kill: ends a Session. The daemon answers after the command of the
-// Session has ended.
+// Session has ended. For a dormant or a damaged Session, the daemon removes
+// the Session and its state.
 message SessionKillRequest {
   // The identifier of the Session.
   string id = 1;
@@ -74,6 +141,9 @@ message SessionKillResponse {}
 // After the response, the connection carries terminal frames and no control
 // messages: spec/frame.md has the terminal data path. A client ends its
 // attach when it closes the connection.
+//
+// An attach to a dormant Session starts its command again, if the restore
+// policy of the Session is not `RESTORE_POLICY_MANUAL`.
 message SessionAttachRequest {
   // The identifier of the Session.
   string id = 1;
@@ -137,3 +207,60 @@ message SessionResizeRequest {
 
 // The reply to `SessionResizeRequest`.
 message SessionResizeResponse {}
+
+// Session.Start: starts the command of a dormant Session again, in a new
+// epoch, with the command, the working directory and the window size that
+// the Session had. The request succeeds without a change for a Session whose
+// command runs.
+message SessionStartRequest {
+  // The identifier of the Session.
+  string id = 1;
+}
+
+// The reply to `SessionStartRequest`.
+message SessionStartResponse {
+  // The Session after the start.
+  Session session = 1;
+}
+
+// Session.Capture: asks for output bytes of a Session that are before a
+// position. A client reads the scrollback with it, one part for each
+// request, from the newest output to the oldest. spec/control.md has the
+// rules.
+message SessionCaptureRequest {
+  // The identifier of the Session.
+  string id = 1;
+  // The epoch of the output. If the value is 0, the daemon uses the newest
+  // epoch of the Session.
+  uint32 epoch = 2;
+  // The sequence number after the last output byte that the client asks
+  // for. If the field is absent, it is the end of the output of the epoch.
+  optional uint64 before_seq = 3;
+  // The largest number of bytes of the response. The daemon gives 262144
+  // bytes at most. If the value is 0, the limit is 262144.
+  uint32 max_bytes = 4;
+}
+
+// The reply to `SessionCaptureRequest`.
+message SessionCaptureResponse {
+  // The epoch of `data`.
+  uint32 epoch = 1;
+  // The sequence number of the first byte of `data`. If `data` is empty, it
+  // is the position before which the daemon has no output.
+  uint64 seq = 2;
+  // The output bytes, as the command wrote them. They end at `before_seq`,
+  // or earlier if the daemon does not have the bytes up to that position.
+  bytes data = 3;
+}
+
+// Session.SetRestorePolicy: sets when the daemon starts the command of a
+// Session again after the Session became dormant.
+message SessionSetRestorePolicyRequest {
+  // The identifier of the Session.
+  string id = 1;
+  // The new policy. `RESTORE_POLICY_UNSPECIFIED` is not valid.
+  RestorePolicy policy = 2;
+}
+
+// The reply to `SessionSetRestorePolicyRequest`.
+message SessionSetRestorePolicyResponse {}

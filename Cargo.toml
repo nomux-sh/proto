@@ -1,0 +1,25 @@
+[workspace]
+resolver = "3"
+members = ["crates/nomux-proto", "tools/protoc-gen-nomux-prost"]
+
+[workspace.package]
+edition = "2024"
+license = "MIT OR Apache-2.0"
+authors = ["The nomux Authors"]
+repository = "https://github.com/nomux-sh/proto"
+
+[workspace.dependencies]
+# `prost`, `prost-build` and `prost-types` must have the same version: the
+# generated code in `nomux-proto` is the output of this `prost-build`.
+prost = "0.14.6"
+prost-build = "0.14.6"
+prost-types = "0.14.6"
+proptest = "1.12.0"
+tempfile = "3.27.0"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }

@@ -8,8 +8,8 @@ Rules for coding agents and for people who work in this repository. `CLAUDE.md` 
 
 | Path | Responsibility |
 |---|---|
-| `proto/nomux/wire/v1/` | Protobuf schemas of the package `nomux.wire.v1`: handshake and envelope. |
-| `spec/` | Specification documents: terminal frame header, holder protocol, capability flag registry, version rule. |
+| `proto/nomux/wire/v1/` | Protobuf schemas of the package `nomux.wire.v1`: envelope, handshake, Host service and Session service. |
+| `spec/` | Specification documents: control channel, terminal frame header, holder protocol, capability flag registry, version rule. |
 | `crates/nomux-proto/` | The published crate: generated control messages, terminal frame header codec, version rule. |
 | `crates/nomux-proto/src/generated/` | Output of `buf generate`. Committed. Not edited by hand. |
 | `crates/nomux-proto/tests/` | Tests of the protobuf wire format. |

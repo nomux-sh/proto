@@ -66,6 +66,7 @@ An older client receives the error with code 5.
 
 ## Other protocols
 
+- **Control channel.** The framing of an `Envelope`, the error codes and the services are in [control.md](control.md).
 - **Holder protocol.** The protocol between a holder and the daemon has its own version and a more strict rule. See [holder.md](holder.md).
 - **Terminal frame header.** The header has a layout version in each frame. See [frame.md](frame.md).
 
@@ -82,5 +83,3 @@ The table gives the control protocol version of each product release. No release
 These items are not decided. The [roadmap](https://github.com/nomux-sh/docs/blob/main/src/content/docs/project/roadmap.md) gives the plan.
 
 - Whether the `Error` for an incompatible version also carries the `version` and `oldest` values of the daemon as fields, so that a client can print them without the message text.
-- The framing of an `Envelope` on the control channel. The current draft is a varint length prefix before each `Envelope` (protobuf length-delimited encoding).
-- The maximum size of an `Envelope`.

@@ -11,6 +11,7 @@ In development. Versions earlier than 1.0.0 are pre-releases: interfaces can cha
 The repository has these parts now:
 
 - The handshake messages (`Hello`, `Welcome`) and the envelope messages (`Envelope`, `Request`, `Response`, `Event`, `Error`) of the control protocol.
+- The Host service (`Info`, `Stop`) and the Session service (`Create`, `List`, `Kill`) of the control protocol.
 - The codec for the header of a terminal data frame.
 - The version rule: how a client and a daemon select a control protocol version.
 
@@ -26,7 +27,10 @@ The crate [`nomux-proto`](https://crates.io/crates/nomux-proto) is the published
 proto/nomux/wire/v1/         protobuf schemas, package nomux.wire.v1
   handshake.proto            Hello, Welcome, ClientKind
   envelope.proto             Envelope, Request, Response, Event, Error
+  host.proto                 Host service: Info, Stop
+  session.proto              Session service: Create, List, Kill
 spec/
+  control.md                 control channel: framing, error codes, services and their messages
   frame.md                   terminal frame header (binary, not protobuf)
   holder.md                  holder protocol: versioning rule, open questions
   capabilities.md            capability flag registry

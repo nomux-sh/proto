@@ -68,3 +68,72 @@ message SessionKillRequest {
 
 // The reply to `SessionKillRequest`.
 message SessionKillResponse {}
+
+// Session.Attach: connects the client to the terminal of a Session.
+//
+// After the response, the connection carries terminal frames and no control
+// messages: spec/frame.md has the terminal data path. A client ends its
+// attach when it closes the connection.
+message SessionAttachRequest {
+  // The identifier of the Session.
+  string id = 1;
+  // The number of rows of the window of the client. If `rows` and `columns`
+  // are not 0, the Session gets this window size before the daemon sends the
+  // screen. If the two values are 0, the window size does not change.
+  uint32 rows = 2;
+  // The number of columns of the window of the client.
+  uint32 columns = 3;
+  // The epoch of the output that the client already has. The value is 0 if
+  // the client has no output of the Session.
+  uint32 epoch = 4;
+  // The sequence number of the first output byte that the client does not
+  // have. The daemon reads the value only if `epoch` is not 0.
+  uint64 from_seq = 5;
+}
+
+// The reply to `SessionAttachRequest`. It is the last control message on the
+// connection.
+message SessionAttachResponse {
+  // The session handle: the value of the `session` field of each terminal
+  // frame of this attach. The value is not 0.
+  uint32 handle = 1;
+  // The current epoch of the Session. The value is not 0.
+  uint32 epoch = 2;
+}
+
+// Session.Detach: ends each attach to a Session. The Session continues.
+message SessionDetachRequest {
+  // The identifier of the Session.
+  string id = 1;
+}
+
+// The reply to `SessionDetachRequest`.
+message SessionDetachResponse {
+  // The number of clients that the daemon detached.
+  uint32 detached = 1;
+}
+
+// Session.Input: writes bytes to the terminal of a Session, as if the user
+// typed them. A client that is attached sends `Input` frames instead.
+message SessionInputRequest {
+  // The identifier of the Session.
+  string id = 1;
+  // The bytes for the terminal.
+  bytes data = 2;
+}
+
+// The reply to `SessionInputRequest`.
+message SessionInputResponse {}
+
+// Session.Resize: changes the window size of a Session.
+message SessionResizeRequest {
+  // The identifier of the Session.
+  string id = 1;
+  // The number of rows: 1 to 65535.
+  uint32 rows = 2;
+  // The number of columns: 1 to 65535. A window has 1048576 cells at most.
+  uint32 columns = 3;
+}
+
+// The reply to `SessionResizeRequest`.
+message SessionResizeResponse {}

@@ -60,7 +60,7 @@ Each service has its own block of 100 field numbers in `Request.body` and in `Re
 
 | Field number | Method | Request | Response | Function |
 |-------------:|--------|---------|----------|----------|
-| 200 | `Host.Info` | `HostInfoRequest` | `HostInfoResponse` | Gives the product version of the daemon, its process ID and the number of Sessions. |
+| 200 | `Host.Info` | `HostInfoRequest` | `HostInfoResponse` | Gives the product version of the daemon, its process ID and the number of Sessions. Ended Sessions are not in the number. |
 | 201 | `Host.Stop` | `HostStopRequest` | `HostStopResponse` | Stops the daemon. The daemon sends the response, closes each connection and exits. No Session ends. |
 
 ### Session
@@ -68,12 +68,15 @@ Each service has its own block of 100 field numbers in `Request.body` and in `Re
 | Field number | Method | Request | Response | Function |
 |-------------:|--------|---------|----------|----------|
 | 300 | `Session.Create` | `SessionCreateRequest` | `SessionCreateResponse` | Starts a new Session and gives its identifier, its state and the process ID of its command. |
-| 301 | `Session.List` | `SessionListRequest` | `SessionListResponse` | Gives all Sessions on the Host. |
-| 302 | `Session.Kill` | `SessionKillRequest` | `SessionKillResponse` | Ends a Session. The daemon answers after the command of the Session has ended. |
+| 301 | `Session.List` | `SessionListRequest` | `SessionListResponse` | Gives the Sessions on the Host. Ended Sessions are in the response only if the request asks for them. |
+| 302 | `Session.Kill` | `SessionKillRequest` | `SessionKillResponse` | Ends a Session. The daemon answers after the command of the Session has ended. For a dormant or a damaged Session, the daemon removes the Session and its state. |
 | 303 | `Session.Attach` | `SessionAttachRequest` | `SessionAttachResponse` | Connects the client to the terminal of a Session. After the response, the client gets the screen and the output in terminal frames. |
 | 304 | `Session.Detach` | `SessionDetachRequest` | `SessionDetachResponse` | Ends each attach to a Session and gives the number of clients that were attached. The Session continues. |
 | 305 | `Session.Input` | `SessionInputRequest` | `SessionInputResponse` | Writes bytes to the terminal of a Session. |
 | 306 | `Session.Resize` | `SessionResizeRequest` | `SessionResizeResponse` | Changes the window size of a Session. |
+| 307 | `Session.Start` | `SessionStartRequest` | `SessionStartResponse` | Starts the command of a dormant Session again. |
+| 308 | `Session.Capture` | `SessionCaptureRequest` | `SessionCaptureResponse` | Gives output bytes of a Session that are before a position: the scrollback. |
+| 309 | `Session.SetRestorePolicy` | `SessionSetRestorePolicyRequest` | `SessionSetRestorePolicyResponse` | Sets when the daemon starts the command of a Session again. |
 
 Errors of the Session service:
 
@@ -81,12 +84,17 @@ Errors of the Session service:
 |---------|-----------|------|
 | `SessionCreateRequest` | The working directory is not an absolute path of a directory, or the command cannot start. | `ERROR_CODE_FAILED` |
 | `SessionCreateRequest` | The Session was not ready in the permitted time. | `ERROR_CODE_TIMEOUT` |
-| `SessionKillRequest` | No Session has the identifier. | `ERROR_CODE_NOT_FOUND` |
+| Each request with an identifier | No Session has the identifier. | `ERROR_CODE_NOT_FOUND` |
+| Each request with an identifier, but not `SessionCaptureRequest` | The Session has the state `SESSION_STATE_ENDED`. | `ERROR_CODE_NOT_FOUND` |
 | `SessionKillRequest` | The command did not end in the permitted time. | `ERROR_CODE_TIMEOUT` |
-| `SessionAttachRequest`, `SessionDetachRequest`, `SessionInputRequest`, `SessionResizeRequest` | No Session has the identifier. | `ERROR_CODE_NOT_FOUND` |
 | `SessionAttachRequest`, `SessionInputRequest`, `SessionResizeRequest` | The daemon has no connection to the holder of the Session (state `SESSION_STATE_UNREACHABLE`). | `ERROR_CODE_FAILED` |
 | `SessionAttachRequest`, `SessionResizeRequest` | The window size is not valid. | `ERROR_CODE_FAILED` |
 | `SessionInputRequest` | The command of the Session has ended. | `ERROR_CODE_FAILED` |
+| `SessionInputRequest`, `SessionResizeRequest` | The Session is dormant. | `ERROR_CODE_FAILED` |
+| `SessionAttachRequest` | The Session is dormant and its restore policy is `RESTORE_POLICY_MANUAL`. | `ERROR_CODE_FAILED` |
+| `SessionAttachRequest`, `SessionStartRequest` | The Session is dormant and its command cannot start. | `ERROR_CODE_FAILED` |
+| `SessionAttachRequest`, `SessionStartRequest`, `SessionInputRequest`, `SessionResizeRequest`, `SessionSetRestorePolicyRequest` | The Session has the state `SESSION_STATE_DAMAGED`. | `ERROR_CODE_FAILED` |
+| `SessionSetRestorePolicyRequest` | The policy is `RESTORE_POLICY_UNSPECIFIED` or a value that the daemon does not know, or the daemon cannot store the policy. | `ERROR_CODE_FAILED` |
 
 A Session has one of these states:
 
@@ -95,8 +103,48 @@ A Session has one of these states:
 | 0 | `SESSION_STATE_UNSPECIFIED` | The daemon did not set the field. The client treats the state as unknown. |
 | 1 | `SESSION_STATE_RUNNING` | The command of the Session runs. |
 | 2 | `SESSION_STATE_UNREACHABLE` | The holder of the Session runs, but the daemon has no connection to it. The daemon tries to connect again. |
+| 3 | `SESSION_STATE_DORMANT` | The Session has no process: its holder is gone, and its command did not end. This is the state of each Session after a restart of the Host. The daemon has the description of the Session and its output. |
+| 4 | `SESSION_STATE_ENDED` | The command of the Session ended. The daemon keeps the Session and its output for a retention time, and then it removes them. |
+| 5 | `SESSION_STATE_DAMAGED` | The daemon cannot read the description of the Session. `Session.damage` has the reason. The Session cannot start again. |
 
-When the command of a Session ends, the daemon removes the Session from its list.
+A client treats a state that it does not know as unknown.
+
+### Fields of a Session
+
+`Session` has the description of a Session: the command, the working directory, the window size, the start time, the epoch and the restore policy. The daemon gives each field that it knows, also for a Session without a process.
+
+- The description never has the environment of the command or a value of it.
+- `pid` is not 0 only in the state `SESSION_STATE_RUNNING`.
+- `exit` is set only in the state `SESSION_STATE_ENDED`. It has the time of the end, and the exit code or the signal if the daemon knows it.
+- `damage` is not empty when the daemon cannot read a part of the state files of the Session. In the state `SESSION_STATE_DAMAGED`, it is the reason for the state. In a different state, a part of the output of the Session is gone, and the Session can be used.
+
+### Restore
+
+The daemon keeps the description and the output of each Session on the Host. Thus a Session whose holder is gone, for example after a restart of the Host, is not lost: it is dormant. A restore starts its command again.
+
+- A restore starts a new holder with the command, the working directory and the window size that the Session had. The Session keeps its identifier and gets the next epoch. The processes of the earlier epoch do not come back: only the output stays.
+- The restore policy of a Session says when the daemon does the restore:
+
+| Value | Name | The daemon starts the command again |
+|------:|------|-------------------------------------|
+| 1 | `RESTORE_POLICY_AUTO` | When the daemon starts, and for a `SessionAttachRequest` or a `SessionStartRequest`. |
+| 2 | `RESTORE_POLICY_ON_FOCUS` | For a `SessionAttachRequest` or a `SessionStartRequest`. This is the policy of a Session that has none. |
+| 3 | `RESTORE_POLICY_MANUAL` | Only for a `SessionStartRequest`. |
+
+- `Session.SetRestorePolicy` sets the policy of a Session whose command runs or of a dormant Session. The daemon stores it with the state of the Session.
+- `Session.Start` on a Session whose command runs succeeds and changes nothing.
+- [frame.md](frame.md) specifies what the client of the `SessionAttachRequest` that starts the command gets: the end of the earlier output, a `Restored` frame and the new screen.
+
+### Capture
+
+`Session.Capture` gives output bytes of a Session without an attach: the scrollback. It works for a Session in each state, also for a dormant and an ended Session.
+
+- The response has the last output bytes before `before_seq` that the daemon has without a gap: `max_bytes` at most, and 262144 bytes at most. `seq` is the sequence number of the first byte.
+- Without `before_seq`, the response ends at the end of the output of the epoch.
+- To read the bytes before a response, a client sends the request again with `before_seq` equal to the `seq` of that response.
+- If `data` is empty, the daemon has no output of that epoch before `before_seq`. The output of the epoch before it is in the epoch with the next smaller number: a client asks for that epoch without `before_seq`.
+- With the epoch `0`, the daemon uses the newest epoch of the Session, and the response has its number.
+- The bytes are the output as the command wrote it. A response can start or end in the middle of an escape sequence or of a UTF-8 character.
 
 ### Attach
 
@@ -114,6 +162,7 @@ A Session has one window size. A window size is valid if `rows` and `columns` ar
 
 - The window size of a Session is the size of the last request that gave one: a `SessionAttachRequest` in which `rows` and `columns` are not 0, or a `SessionResizeRequest`.
 - A `SessionAttachRequest` in which `rows` and `columns` are 0 does not change the window size. A request in which only one of the two is 0 is not valid.
+- A dormant Session keeps its window size. A restore starts the command with that size, or with the size of the `SessionAttachRequest` that starts it.
 - A client that is attached sends `Session.Resize` when its window gets a different size.
 - The daemon does not tell the other attached clients the new size. A client whose window has a different size shows the output as the command made it for the size of the Session.
 
@@ -187,6 +236,7 @@ These items are not decided. The [roadmap](https://github.com/nomux-sh/docs/blob
 
 - The environment and the window size of a new Session.
 - A request that detaches one client and not all the clients of a Session.
-- A state for a Session whose command has ended, with the exit status.
+- A request that removes an ended Session before its retention time is over, and a request that starts the command of an ended Session again.
+- The name of the environment profile of a Session.
 - The other services: Project, Worktree, Agent, Team, Task and Events.
 - Ext: the installation of an extension from a registry, the update of an extension, and the events of the extensions.

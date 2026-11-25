@@ -95,6 +95,12 @@ message Request {
     SessionInputRequest session_input = 305;
     // Session.Resize.
     SessionResizeRequest session_resize = 306;
+    // Session.Start.
+    SessionStartRequest session_start = 307;
+    // Session.Capture.
+    SessionCaptureRequest session_capture = 308;
+    // Session.SetRestorePolicy.
+    SessionSetRestorePolicyRequest session_set_restore_policy = 309;
     // Ext.List.
     ExtListRequest ext_list = 400;
     // Ext.Inspect.
@@ -140,6 +146,12 @@ message Response {
     SessionInputResponse session_input = 305;
     // Session.Resize.
     SessionResizeResponse session_resize = 306;
+    // Session.Start.
+    SessionStartResponse session_start = 307;
+    // Session.Capture.
+    SessionCaptureResponse session_capture = 308;
+    // Session.SetRestorePolicy.
+    SessionSetRestorePolicyResponse session_set_restore_policy = 309;
     // Ext.List.
     ExtListResponse ext_list = 400;
     // Ext.Inspect.

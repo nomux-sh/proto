@@ -18,7 +18,8 @@
 //   100 to 199   Handshake service.
 //   200 to 299   Host service.
 //   300 to 399   Session service.
-//   400 and up   Not assigned. Each new service takes the next free block of
+//   400 to 499   Ext service.
+//   500 and up   Not assigned. Each new service takes the next free block of
 //                100 numbers.
 //
 // A request and its response use the same field number where possible.
@@ -30,6 +31,7 @@ syntax = "proto3";
 
 package nomux.wire.v1;
 
+import "nomux/wire/v1/ext.proto";
 import "nomux/wire/v1/handshake.proto";
 import "nomux/wire/v1/host.proto";
 import "nomux/wire/v1/session.proto";
@@ -93,6 +95,18 @@ message Request {
     SessionInputRequest session_input = 305;
     // Session.Resize.
     SessionResizeRequest session_resize = 306;
+    // Ext.List.
+    ExtListRequest ext_list = 400;
+    // Ext.Inspect.
+    ExtInspectRequest ext_inspect = 401;
+    // Ext.Install.
+    ExtInstallRequest ext_install = 402;
+    // Ext.Remove.
+    ExtRemoveRequest ext_remove = 403;
+    // Ext.SetEnabled.
+    ExtSetEnabledRequest ext_set_enabled = 404;
+    // Ext.Call.
+    ExtCallRequest ext_call = 405;
   }
 }
 
@@ -126,6 +140,18 @@ message Response {
     SessionInputResponse session_input = 305;
     // Session.Resize.
     SessionResizeResponse session_resize = 306;
+    // Ext.List.
+    ExtListResponse ext_list = 400;
+    // Ext.Inspect.
+    ExtInspectResponse ext_inspect = 401;
+    // Ext.Install.
+    ExtInstallResponse ext_install = 402;
+    // Ext.Remove.
+    ExtRemoveResponse ext_remove = 403;
+    // Ext.SetEnabled.
+    ExtSetEnabledResponse ext_set_enabled = 404;
+    // Ext.Call. The extension answered: with a result or with an error.
+    ExtCallResponse ext_call = 405;
   }
 }
 

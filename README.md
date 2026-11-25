@@ -11,7 +11,7 @@ In development. Versions earlier than 1.0.0 are pre-releases: interfaces can cha
 The repository has these parts now:
 
 - The handshake messages (`Hello`, `Welcome`) and the envelope messages (`Envelope`, `Request`, `Response`, `Event`, `Error`) of the control protocol.
-- The Host service (`Info`, `Stop`) and the Session service (`Create`, `List`, `Kill`, `Attach`, `Detach`, `Input`, `Resize`) of the control protocol.
+- The Host service (`Info`, `Stop`), the Session service (`Create`, `List`, `Kill`, `Attach`, `Detach`, `Input`, `Resize`) and the Ext service (`List`, `Inspect`, `Install`, `Remove`, `SetEnabled`, `Call`) of the control protocol.
 - The codec for the header of a terminal data frame and for the payload of the `End` frame.
 - The version rule: how a client and a daemon select a control protocol version.
 
@@ -29,6 +29,7 @@ proto/nomux/wire/v1/         protobuf schemas, package nomux.wire.v1
   envelope.proto             Envelope, Request, Response, Event, Error
   host.proto                 Host service: Info, Stop
   session.proto              Session service: Create, List, Kill, Attach, Detach, Input, Resize
+  ext.proto                  Ext service: List, Inspect, Install, Remove, SetEnabled, Call
 spec/
   control.md                 control channel: framing, error codes, services and their messages
   frame.md                   terminal frames (binary, not protobuf): header, payloads, terminal data path

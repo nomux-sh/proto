@@ -48,6 +48,7 @@ Each service has its own block of 100 field numbers in `Request.body` and in `Re
 | Handshake | 100 to 199 | `handshake.proto` |
 | Host | 200 to 299 | `host.proto` |
 | Session | 300 to 399 | `session.proto` |
+| Ext | 400 to 499 | `ext.proto` |
 
 ### Handshake
 
@@ -121,6 +122,65 @@ A Session has one window size. A window size is valid if `rows` and `columns` ar
 An attached client sends its input in `Input` frames, which have no reply and have priority over the output. `Session.Input` is for a client that is not attached, for example a script: the daemon answers after the holder of the Session has the bytes.
 The two paths write to the same terminal. The daemon keeps the bytes of one request or of one frame together, and it does not define a sequence between two clients.
 
+### Ext
+
+The Ext service manages the extensions of a Host and calls the methods of their daemon parts. The [extension protocol](https://github.com/nomux-sh/extension-api/blob/main/spec/extension-protocol.md) specifies how the daemon talks to a daemon part.
+
+| Field number | Method | Request | Response | Function |
+|-------------:|--------|---------|----------|----------|
+| 400 | `Ext.List` | `ExtListRequest` | `ExtListResponse` | Gives the installed extensions: identifier, name, version, state, the reason for the state and the approved permissions. |
+| 401 | `Ext.Inspect` | `ExtInspectRequest` | `ExtInspectResponse` | Validates the package in a directory on the Host and gives the permissions that its manifest asks for. Changes nothing. |
+| 402 | `Ext.Install` | `ExtInstallRequest` | `ExtInstallResponse` | Installs the package in a directory on the Host with the permissions that the user approved, and enables the extension. Starts no process. |
+| 403 | `Ext.Remove` | `ExtRemoveRequest` | `ExtRemoveResponse` | Stops an extension and removes its package, its state and its data. |
+| 404 | `Ext.SetEnabled` | `ExtSetEnabledRequest` | `ExtSetEnabledResponse` | Enables or disables an extension and gives the extension after the change. The daemon stops the process of an extension that it disables. |
+| 405 | `Ext.Call` | `ExtCallRequest` | `ExtCallResponse` | Calls a method of the daemon part of an extension and gives the answer of the extension. |
+
+An extension has one of these states:
+
+| Value | Name | Meaning |
+|------:|------|---------|
+| 0 | `EXTENSION_STATE_UNSPECIFIED` | The daemon did not set the field. The client treats the state as unknown. |
+| 1 | `EXTENSION_STATE_STOPPED` | The extension is enabled and its daemon part does not run. The next `Ext.Call` starts it. |
+| 2 | `EXTENSION_STATE_STARTING` | The process of the daemon part started and is not ready. |
+| 3 | `EXTENSION_STATE_RUNNING` | The daemon part runs. |
+| 4 | `EXTENSION_STATE_FAILED` | The daemon part failed and does not run. `state_reason` has the failure. After a pause, the next `Ext.Call` starts it again. |
+| 5 | `EXTENSION_STATE_DISABLED` | The daemon does not start the extension. `state_reason` says why: the user disabled it, or the daemon disabled it after failures. |
+
+#### Installation
+
+An installation has two steps, thus no extension runs before the user saw and approved its permissions.
+
+1. The client sends `Ext.Inspect` with the directory of the package. The daemon validates the manifest and answers with the identifier, the name, the version and the permissions that the manifest asks for. The daemon installs nothing.
+2. The client shows the permissions to the user. The user approves all of them, a part of them, or none, or stops the installation.
+3. The client sends `Ext.Install` with the same directory and the approved permissions in `granted`. The daemon validates the package again, copies it and enables the extension.
+
+- The extension gets the permissions in `granted` and no others, also when its manifest asks for more. A request without `granted` approves no permission.
+- The daemon refuses an `Ext.Install` in which `granted` has a permission that the manifest does not ask for. An approved directory is equal to an item of `fs` in the manifest, or the item starts with `${worktree}` and the directory ends with the rest of the item.
+- `Ext.Install` starts no process. Only `Ext.Call` starts the daemon part of an extension, and only for an extension that is installed and enabled.
+- A client must not send `Ext.Install` before the user approved the permissions of step 1. A client without a user interface, for example a script, gets the approval from its arguments.
+
+#### Call
+
+`Ext.Call` has two kinds of failure:
+
+- **The extension answered with an error.** The response is an `ExtCallResponse` with an `ExtCallError`. The code is the error code of the extension protocol, and the values of `ExtCallErrorCode` are equal to the values of that protocol.
+- **The daemon got no answer from the extension.** The response is an `Error` of the control protocol, with a code from the table below.
+
+A response with an empty `payload` is a result: the method gave zero bytes.
+
+The payload of a call and the payload of a result go in one `Envelope`, thus each of them has less than 1 MiB. A frame of the extension protocol can be larger: the daemon answers a result that does not go into an `Envelope` with `ERROR_CODE_FAILED`.
+
+Errors of the Ext service:
+
+| Request | Condition | Code |
+|---------|-----------|------|
+| `ExtInspectRequest`, `ExtInstallRequest` | The directory is not an absolute path, the manifest is not valid, the package does not have the program of its daemon part, or the daemon does not supply the extension API version that the manifest asks for. For a manifest that is not valid, the message has the path of each field that is not valid. | `ERROR_CODE_FAILED` |
+| `ExtInstallRequest` | `granted` has a permission that the manifest does not ask for, or an extension with the identifier is already installed. | `ERROR_CODE_FAILED` |
+| `ExtRemoveRequest`, `ExtSetEnabledRequest`, `ExtCallRequest` | No extension has the identifier. | `ERROR_CODE_NOT_FOUND` |
+| `ExtCallRequest` | The extension is disabled, has no daemon part, cannot start, or its process failed before it answered. | `ERROR_CODE_FAILED` |
+| `ExtCallRequest` | The extension did not answer in the permitted time. | `ERROR_CODE_TIMEOUT` |
+| `ExtCallRequest` | The payload or the result does not go into one `Envelope`. | `ERROR_CODE_FAILED` |
+
 ## Open items
 
 These items are not decided. The [roadmap](https://github.com/nomux-sh/docs/blob/main/src/content/docs/project/roadmap.md) gives the plan.
@@ -128,4 +188,5 @@ These items are not decided. The [roadmap](https://github.com/nomux-sh/docs/blob
 - The environment and the window size of a new Session.
 - A request that detaches one client and not all the clients of a Session.
 - A state for a Session whose command has ended, with the exit status.
-- The other services: Project, Worktree, Agent, Team, Task, Events and Ext.
+- The other services: Project, Worktree, Agent, Team, Task and Events.
+- Ext: the installation of an extension from a registry, the update of an extension, and the events of the extensions.

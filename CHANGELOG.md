@@ -1,17 +1,26 @@
 # Changelog
 
-This file lists the important changes to this repository.
+All notable changes to this project are documented in this file.
 
-The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The crate `nomux-proto` uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+[git-cliff](https://git-cliff.org) writes this file from the commit subjects.
+To see the changes that are not in a version, run `git cliff --unreleased`.
+
+## [0.1.0] - 2026-11-25
 
 ### Added
 
-- `buf` configuration (`buf.yaml`, `buf.gen.yaml`) for the package `nomux.wire.v1`.
-- Handshake schema: `Hello`, `Welcome`, and `ClientKind`.
-- Envelope schema: `Envelope`, `Request`, `Response`, `Event`, `Error`, and `ErrorCode`.
-- Crate `nomux-proto` with the generated `prost` types, the terminal frame header codec, and the version rule of the handshake.
-- Local `buf` plugin `protoc-gen-nomux-prost` and the script `scripts/check-generated.sh`.
-- Specification documents: `spec/frame.md`, `spec/holder.md`, `spec/capabilities.md`, and `spec/compatibility.md`.
-- CI workflow that calls the reusable workflows of the `nomux-sh/.github` repository.
+- Add buf setup, handshake and envelope schemas
+- Add generated types and frame header codec
+
+### Changed
+
+- Rename compat to compatibility and remove FrameKind::ALL
+
+### Documentation
+
+- Add frame, holder, capability and compatibility specs
+- Describe layout, code generation, checks and versioning
+- Say what the repository has now and link the roadmap

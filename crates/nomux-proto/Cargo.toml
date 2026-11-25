@@ -1,0 +1,20 @@
+[package]
+name = "nomux-proto"
+version = "0.1.0"
+description = "The nomux wire protocol: control messages and the terminal frame header"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+readme = "README.md"
+keywords = ["nomux", "protocol", "protobuf", "terminal"]
+categories = ["encoding", "network-programming"]
+
+[dependencies]
+prost.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true

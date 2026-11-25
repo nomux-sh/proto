@@ -3,12 +3,18 @@ name = "nomux-proto"
 version = "0.1.0"
 description = "The nomux wire protocol: control messages and the terminal frame header"
 edition.workspace = true
+rust-version = "1.85"
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
+documentation = "https://docs.rs/nomux-proto"
 readme = "README.md"
-keywords = ["nomux", "protocol", "protobuf", "terminal"]
+keywords = ["nomux", "protocol", "protobuf", "terminal", "wire-format"]
 categories = ["encoding", "network-programming"]
+# The package has only the files that a build and a test run need. The
+# generated code is in `src/generated/`, thus a build does not start `buf` or
+# `protoc`.
+include = ["src/**/*.rs", "tests/**/*.rs", "README.md", "LICENSE-APACHE", "LICENSE-MIT"]
 
 [dependencies]
 prost.workspace = true

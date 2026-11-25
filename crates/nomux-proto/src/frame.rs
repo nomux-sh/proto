@@ -19,8 +19,10 @@
 //! |     12 |    4 | `length`  |
 //! |     16 |    8 | `seq`     |
 //!
-//! This module defines only the header. The payload layout of each frame
-//! kind is not defined yet.
+//! The payload of an `Output`, a `ScreenSnapshot` and an `Input` frame is
+//! bytes of the terminal. The payload of an `End` frame is an
+//! [`EndReason`]. `spec/frame.md` has the payload of each kind and the
+//! terminal data path between the daemon and a client.
 
 use core::fmt;
 
@@ -32,6 +34,14 @@ pub const FRAME_VERSION: u8 = 1;
 
 /// The largest permitted value of `length` (1 MiB).
 pub const MAX_PAYLOAD_LEN: u32 = 1 << 20;
+
+/// The epoch of each session in this version of the protocol. A session gets
+/// a later epoch only when the numbering of its output starts again, which
+/// does not occur in this version.
+pub const FIRST_EPOCH: u32 = 1;
+
+/// The length of the payload of an `End` frame in bytes.
+pub const END_PAYLOAD_LEN: usize = 8;
 
 /// The kind of a terminal data frame.
 ///
@@ -53,6 +63,9 @@ pub enum FrameKind {
     Credit = 5,
     /// Input bytes for a session. Used on the input channel.
     Input = 6,
+    /// The attach ended. The payload is an [`EndReason`]. It is the last
+    /// frame of an attach.
+    End = 7,
 }
 
 impl FrameKind {
@@ -66,6 +79,7 @@ impl FrameKind {
             4 => Some(Self::Ack),
             5 => Some(Self::Credit),
             6 => Some(Self::Input),
+            7 => Some(Self::End),
             _ => None,
         }
     }
@@ -245,6 +259,72 @@ impl FrameHeader {
     }
 }
 
+/// Why an attach ended: the payload of an `End` frame.
+///
+/// | Offset | Size | Field    |
+/// |-------:|-----:|----------|
+/// |      0 |    1 | `reason` |
+/// |      1 |    3 | zero     |
+/// |      4 |    4 | `value`  |
+///
+/// `value` is a signed little-endian integer: the exit code for
+/// [`EndReason::Exited`], the signal number for [`EndReason::Signaled`], and
+/// 0 for the other reasons.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum EndReason {
+    /// The command of the session ended with an exit code.
+    Exited {
+        /// The exit code.
+        code: i32,
+    },
+    /// A signal ended the command of the session.
+    Signaled {
+        /// The signal number of the operating system of the host.
+        signal: i32,
+    },
+    /// A `Session.Detach` request ended the attach. The session continues.
+    Detached,
+    /// The session ended, and the daemon does not know how the command
+    /// ended.
+    Lost,
+    /// A reason from a later version of the protocol.
+    Unrecognized(u8),
+}
+
+impl EndReason {
+    /// Encodes the payload of an `End` frame.
+    pub fn encode(&self) -> [u8; END_PAYLOAD_LEN] {
+        let (reason, value) = match *self {
+            Self::Exited { code } => (1, code),
+            Self::Signaled { signal } => (2, signal),
+            Self::Detached => (3, 0),
+            Self::Lost => (4, 0),
+            Self::Unrecognized(reason) => (reason, 0),
+        };
+        let mut bytes = [0u8; END_PAYLOAD_LEN];
+        bytes[0] = reason;
+        bytes[4..8].copy_from_slice(&value.to_le_bytes());
+        bytes
+    }
+
+    /// Decodes the payload of an `End` frame. The bytes after the fields
+    /// that this version knows are ignored: a later version can add fields.
+    ///
+    /// Returns `None` if the payload has fewer bytes than
+    /// [`END_PAYLOAD_LEN`].
+    pub fn decode(payload: &[u8]) -> Option<Self> {
+        let [reason, _, _, _, v0, v1, v2, v3] = *payload.first_chunk::<END_PAYLOAD_LEN>()?;
+        let value = i32::from_le_bytes([v0, v1, v2, v3]);
+        Some(match reason {
+            1 => Self::Exited { code: value },
+            2 => Self::Signaled { signal: value },
+            3 => Self::Detached,
+            4 => Self::Lost,
+            reason => Self::Unrecognized(reason),
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -288,12 +368,13 @@ mod tests {
             (FrameKind::Ack, 4),
             (FrameKind::Credit, 5),
             (FrameKind::Input, 6),
+            (FrameKind::End, 7),
         ];
         for (kind, byte) in expected {
             assert_eq!(kind.as_u8(), byte);
             assert_eq!(FrameKind::from_u8(byte), Some(kind));
         }
-        for byte in [0, 7, 0x80, 0xff] {
+        for byte in [0, 8, 0x80, 0xff] {
             assert_eq!(FrameKind::from_u8(byte), None);
         }
     }
@@ -324,9 +405,9 @@ mod tests {
                 },
             ),
             (
-                with(1, &[7]),
+                with(1, &[8]),
                 FrameError::UnknownKind {
-                    kind: 7,
+                    kind: 8,
                     length: SAMPLE_HEADER.length,
                 },
             ),
@@ -394,5 +475,38 @@ mod tests {
                 available: HEADER_LEN - 1
             })
         );
+    }
+
+    #[test]
+    fn end_payload_matches_the_specified_layout() {
+        let cases = [
+            (
+                EndReason::Exited { code: 0x0102_0304 },
+                [1, 0, 0, 0, 0x04, 0x03, 0x02, 0x01],
+            ),
+            (
+                EndReason::Exited { code: -1 },
+                [1, 0, 0, 0, 0xff, 0xff, 0xff, 0xff],
+            ),
+            (EndReason::Signaled { signal: 9 }, [2, 0, 0, 0, 9, 0, 0, 0]),
+            (EndReason::Detached, [3, 0, 0, 0, 0, 0, 0, 0]),
+            (EndReason::Lost, [4, 0, 0, 0, 0, 0, 0, 0]),
+        ];
+        for (reason, bytes) in cases {
+            assert_eq!(reason.encode(), bytes, "{reason:?}");
+            assert_eq!(EndReason::decode(&bytes), Some(reason), "{reason:?}");
+        }
+    }
+
+    #[test]
+    fn end_payload_of_a_later_version_can_be_read() {
+        // A reason that this version does not know, and a field after the
+        // fields that this version knows.
+        let payload = [9, 0, 0, 0, 0, 0, 0, 0, 0xaa];
+        assert_eq!(
+            EndReason::decode(&payload),
+            Some(EndReason::Unrecognized(9))
+        );
+        assert_eq!(EndReason::decode(&payload[..END_PAYLOAD_LEN - 1]), None);
     }
 }

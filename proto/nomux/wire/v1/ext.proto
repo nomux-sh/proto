@@ -1,0 +1,199 @@
+// Ext service of the nomux control protocol: the extensions of a Host.
+//
+// The requests and the responses are fields of `Request.body` and
+// `Response.result` (see envelope.proto). The Ext service has the field
+// numbers 400 to 499 there.
+//
+// STATUS: DRAFT. The messages can change in a minor version until version
+// 1.0.0.
+
+syntax = "proto3";
+
+package nomux.wire.v1;
+
+// The state of an extension on the Host.
+enum ExtensionState {
+  // The daemon did not set the field. The client treats the state as unknown.
+  EXTENSION_STATE_UNSPECIFIED = 0;
+  // The extension is enabled and its daemon part does not run. The next
+  // `Ext.Call` starts it.
+  EXTENSION_STATE_STOPPED = 1;
+  // The process of the daemon part started and is not ready.
+  EXTENSION_STATE_STARTING = 2;
+  // The daemon part runs.
+  EXTENSION_STATE_RUNNING = 3;
+  // The daemon part failed and does not run. After a pause, the next
+  // `Ext.Call` starts it again.
+  EXTENSION_STATE_FAILED = 4;
+  // The daemon does not start the extension: the user disabled it, or the
+  // daemon disabled it after failures.
+  EXTENSION_STATE_DISABLED = 5;
+}
+
+// The permissions of an extension: the ones that its manifest asks for, or
+// the ones that the user approved.
+message ExtensionPermissions {
+  // The directories that the extension reads and writes. In a request of a
+  // manifest, an item is an absolute path or starts with `${worktree}`. In
+  // an approval, each item is an absolute path.
+  repeated string fs = 1;
+  // The programs that the extension starts: program names without a
+  // directory.
+  repeated string process = 2;
+  // `true` if the extension opens network connections.
+  bool network = 3;
+  // The scopes of host services, for example `sessions:read`.
+  repeated string scopes = 4;
+}
+
+// One installed extension.
+message Extension {
+  // The identifier of the extension, for example `nomux.git`.
+  string id = 1;
+  // The name of the extension for the user.
+  string name = 2;
+  // The version of the extension.
+  string version = 3;
+  // The state of the extension.
+  ExtensionState state = 4;
+  // Why the extension has its state. For `EXTENSION_STATE_DISABLED`: why the
+  // extension is disabled. For `EXTENSION_STATE_FAILED`: the failure. The
+  // value is empty in the other states. The text is in English and is not
+  // stable.
+  string state_reason = 5;
+  // The permissions that the user approved.
+  ExtensionPermissions granted = 6;
+}
+
+// Ext.List: asks for the installed extensions of the Host.
+message ExtListRequest {}
+
+// The reply to `ExtListRequest`.
+message ExtListResponse {
+  // The extensions, in the sequence of their identifiers.
+  repeated Extension extensions = 1;
+}
+
+// Ext.Inspect: the first step of an installation. The daemon validates the
+// package in a directory and says which permissions its manifest asks for.
+// The daemon installs nothing and starts nothing.
+message ExtInspectRequest {
+  // The directory of the package: an absolute path on the Host. The
+  // directory has the manifest `extension.toml`.
+  string directory = 1;
+}
+
+// The reply to `ExtInspectRequest`.
+message ExtInspectResponse {
+  // The identifier in the manifest.
+  string id = 1;
+  // The name in the manifest.
+  string name = 2;
+  // The version in the manifest.
+  string version = 3;
+  // The permissions that the manifest asks for. The client shows them to
+  // the user before it sends `ExtInstallRequest`.
+  ExtensionPermissions requested = 4;
+}
+
+// Ext.Install: the second step of an installation. The daemon validates the
+// package again, copies it and enables the extension with the permissions
+// that the user approved. The daemon starts no process: the first
+// `Ext.Call` does.
+message ExtInstallRequest {
+  // The directory of the package: an absolute path on the Host.
+  string directory = 1;
+  // The permissions that the user approved, from the `requested` field of
+  // `ExtInspectResponse`. The extension gets these permissions and no
+  // others. The daemon refuses a permission that the manifest does not ask
+  // for.
+  ExtensionPermissions granted = 2;
+}
+
+// The reply to `ExtInstallRequest`.
+message ExtInstallResponse {
+  // The installed extension.
+  Extension extension = 1;
+}
+
+// Ext.Remove: stops an extension and removes its package, its state and its
+// data from the Host.
+message ExtRemoveRequest {
+  // The identifier of the extension.
+  string id = 1;
+}
+
+// The reply to `ExtRemoveRequest`.
+message ExtRemoveResponse {}
+
+// Ext.SetEnabled: enables or disables an extension. The daemon stops the
+// process of an extension that it disables. An extension that the daemon
+// disabled after failures can be enabled again.
+message ExtSetEnabledRequest {
+  // The identifier of the extension.
+  string id = 1;
+  // `true` to enable the extension, `false` to disable it.
+  bool enabled = 2;
+}
+
+// The reply to `ExtSetEnabledRequest`.
+message ExtSetEnabledResponse {
+  // The extension after the change.
+  Extension extension = 1;
+}
+
+// Ext.Call: calls a method of the daemon part of an extension. If the daemon
+// part does not run, the daemon starts it.
+message ExtCallRequest {
+  // The identifier of the extension.
+  string ext = 1;
+  // The name of the method.
+  string method = 2;
+  // The argument of the method. The method specifies the encoding.
+  bytes payload = 3;
+}
+
+// The reason why a method of an extension did not give a result. The values
+// are the error codes of the extension protocol.
+enum ExtCallErrorCode {
+  // The extension did not set the field. The client treats this as
+  // `EXT_CALL_ERROR_CODE_FAILED`.
+  EXT_CALL_ERROR_CODE_UNSPECIFIED = 0;
+  // The method failed, and no other code gives the reason.
+  EXT_CALL_ERROR_CODE_FAILED = 1;
+  // The extension does not have the method, or the item that the call names
+  // does not exist.
+  EXT_CALL_ERROR_CODE_NOT_FOUND = 2;
+  // The extension did not complete the call in the time that it permits.
+  EXT_CALL_ERROR_CODE_TIMEOUT = 3;
+  // The extension does not have the permission that the call needs.
+  EXT_CALL_ERROR_CODE_PERMISSION_DENIED = 4;
+  // The extension protocol uses this value only in its handshake.
+  EXT_CALL_ERROR_CODE_VERSION_INCOMPATIBLE = 5;
+  // The extension cannot read the payload of the call.
+  EXT_CALL_ERROR_CODE_INVALID_ARGUMENT = 6;
+  // The extension stopped the call.
+  EXT_CALL_ERROR_CODE_CANCELLED = 7;
+}
+
+// The error with which an extension answered a call.
+message ExtCallError {
+  // The reason for the failure.
+  ExtCallErrorCode code = 1;
+  // A message in English for the user. The text is not stable.
+  string message = 2;
+}
+
+// The reply to `ExtCallRequest`: the answer of the extension.
+//
+// If the daemon gets no answer from the extension, the response of the
+// request is an `Error` and not this message: spec/control.md has the codes.
+message ExtCallResponse {
+  // The answer of the extension.
+  oneof answer {
+    // The result of the method. The method specifies the encoding.
+    bytes payload = 1;
+    // The method answered with an error.
+    ExtCallError error = 2;
+  }
+}

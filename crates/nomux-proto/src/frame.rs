@@ -21,8 +21,9 @@
 //!
 //! The payload of an `Output`, a `ScreenSnapshot` and an `Input` frame is
 //! bytes of the terminal. The payload of an `End` frame is an
-//! [`EndReason`]. `spec/frame.md` has the payload of each kind and the
-//! terminal data path between the daemon and a client.
+//! [`EndReason`]. A `HistoryGap` and a `Restored` frame have no payload.
+//! `spec/frame.md` has the payload of each kind and the terminal data path
+//! between the daemon and a client.
 
 use core::fmt;
 
@@ -35,9 +36,9 @@ pub const FRAME_VERSION: u8 = 1;
 /// The largest permitted value of `length` (1 MiB).
 pub const MAX_PAYLOAD_LEN: u32 = 1 << 20;
 
-/// The epoch of each session in this version of the protocol. A session gets
-/// a later epoch only when the numbering of its output starts again, which
-/// does not occur in this version.
+/// The first epoch of a session. A session gets the next epoch each time
+/// the numbering of its output starts again: when its command starts again
+/// after the session was dormant. The value 0 is not an epoch.
 pub const FIRST_EPOCH: u32 = 1;
 
 /// The length of the payload of an `End` frame in bytes.
@@ -66,6 +67,14 @@ pub enum FrameKind {
     /// The attach ended. The payload is an [`EndReason`]. It is the last
     /// frame of an attach.
     End = 7,
+    /// The daemon does not have the output between the last output byte
+    /// that the client has and the next frame. Needs the capability flag
+    /// [`OUTPUT_HISTORY`](crate::capabilities::OUTPUT_HISTORY).
+    HistoryGap = 8,
+    /// The command of the session started again in a new epoch. The frames
+    /// before this frame are of an earlier epoch. Needs the capability flag
+    /// [`OUTPUT_HISTORY`](crate::capabilities::OUTPUT_HISTORY).
+    Restored = 9,
 }
 
 impl FrameKind {
@@ -80,6 +89,8 @@ impl FrameKind {
             5 => Some(Self::Credit),
             6 => Some(Self::Input),
             7 => Some(Self::End),
+            8 => Some(Self::HistoryGap),
+            9 => Some(Self::Restored),
             _ => None,
         }
     }
@@ -369,12 +380,14 @@ mod tests {
             (FrameKind::Credit, 5),
             (FrameKind::Input, 6),
             (FrameKind::End, 7),
+            (FrameKind::HistoryGap, 8),
+            (FrameKind::Restored, 9),
         ];
         for (kind, byte) in expected {
             assert_eq!(kind.as_u8(), byte);
             assert_eq!(FrameKind::from_u8(byte), Some(kind));
         }
-        for byte in [0, 8, 0x80, 0xff] {
+        for byte in [0, 10, 0x80, 0xff] {
             assert_eq!(FrameKind::from_u8(byte), None);
         }
     }
@@ -405,9 +418,9 @@ mod tests {
                 },
             ),
             (
-                with(1, &[8]),
+                with(1, &[10]),
                 FrameError::UnknownKind {
-                    kind: 8,
+                    kind: 10,
                     length: SAMPLE_HEADER.length,
                 },
             ),

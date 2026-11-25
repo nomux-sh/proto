@@ -39,11 +39,13 @@ A flag does not replace the protocol version. The version rule is in [compatibil
 |---------------------|------------|-------|---------|
 | `waits`             | `reserved` | —     | Not specified yet. The name is reserved for wait operations that are driven by events. |
 | `pane_state_events` | `reserved` | —     | Not specified yet. The name is reserved for events about pane state. |
+| `output_history`    | `active`   | 1     | The daemon can send output of an earlier epoch of a Session, and the terminal frames `HistoryGap` and `Restored`. [frame.md](frame.md) specifies when. |
 
-No flag is `active` in this version of the registry.
+The module `nomux_proto::capabilities` has a constant for each `active` flag.
 
 ## How to add a flag
 
 1. Add a row to the registry in the same pull request that specifies the feature.
 2. Set the state to `active` and set "Since" to the control protocol version that first includes the feature.
 3. If the feature adds a terminal frame kind or a frame flag bit, also update [frame.md](frame.md).
+4. Add a constant with the name to `crates/nomux-proto/src/capabilities.rs`.

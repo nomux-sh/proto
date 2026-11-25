@@ -1,5 +1,8 @@
 name: CI
 
+# The shared jobs call the reusable workflows of the organization. The steps
+# are in https://github.com/nomux-sh/.github/tree/main/.github/workflows
+
 on:
   pull_request:
   push:
@@ -9,21 +12,41 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+
 jobs:
-  # The reusable workflows are in the nomux-sh/.github repository.
-  # They are referenced by branch: they are first-party and change together
-  # with the repositories that call them.
+  # Finds the newest version tag for the breaking change check. The output is
+  # empty until the first tag exists, and then the check does not run.
+  last-tag:
+    name: last tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      breaking-against: ${{ steps.find.outputs.breaking-against }}
+    steps:
+      - name: Find the newest version tag
+        id: find
+        run: |
+          set -euo pipefail
+          tag="$(git -c versionsort.suffix=- ls-remote --tags --refs --sort=-version:refname \
+            "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" 'v[0-9]*.[0-9]*.[0-9]*' |
+            awk -F/ 'NR == 1 { print $3 }')"
+          if [ -n "$tag" ]; then
+            echo "breaking-against=.git#tag=$tag" >> "$GITHUB_OUTPUT"
+          fi
+          echo "Newest version tag: ${tag:-none}"
+
   buf:
+    needs: last-tag
     uses: nomux-sh/.github/.github/workflows/buf-ci.yml@main
     with:
       working-directory: .
-      # Empty: the breaking change check does not run. No tag exists yet.
-      # After the first tag, set this to the last tag, for example
-      # ".git#tag=v0.1.0".
-      breaking-against: ""
+      breaking-against: ${{ needs.last-tag.outputs.breaking-against }}
 
   rust:
     uses: nomux-sh/.github/.github/workflows/rust-ci.yml@main
@@ -34,16 +57,12 @@ jobs:
       run-deny: true
       run-machete: true
 
-  dco:
-    if: github.event_name == 'pull_request'
-    uses: nomux-sh/.github/.github/workflows/dco.yml@main
+  repo-lint:
+    uses: nomux-sh/.github/.github/workflows/repo-lint.yml@main
+    with:
+      license: code
+      require-changelog: true
 
-  commitlint:
-    if: github.event_name == 'pull_request'
-    uses: nomux-sh/.github/.github/workflows/commitlint.yml@main
-
-  # Fails if crates/nomux-proto/src/generated is not the output of
-  # `buf generate` for the committed schemas.
   generated:
     name: generated code is up to date
     runs-on: ubuntu-latest
@@ -64,7 +83,57 @@ jobs:
           echo "${BUF_SHA256}  $RUNNER_TEMP/bin/buf" | sha256sum --check -
           chmod +x "$RUNNER_TEMP/bin/buf"
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
-      # rustup reads rust-toolchain.toml and installs the pinned toolchain
-      # when cargo starts.
+      - name: Install the toolchain from rust-toolchain.toml
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - name: buf build
+        run: buf build
       - name: Check generated code
         run: scripts/check-generated.sh
+
+  # Builds the crate from the packaged files only, as crates.io users do.
+  # The job has no `buf` and no `protoc`.
+  package:
+    name: package
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the toolchain from rust-toolchain.toml
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - name: cargo package
+        run: cargo package -p nomux-proto --locked
+      - name: Build with the minimum supported Rust version
+        run: |
+          set -euo pipefail
+          msrv="$(cargo metadata --no-deps --format-version 1 |
+            jq -r '.packages[] | select(.name == "nomux-proto") | .rust_version')"
+          rustup toolchain install "$msrv" --profile minimal
+          cargo "+$msrv" check -p nomux-proto --locked
+
+  actionlint:
+    name: actionlint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ACTIONLINT_VERSION: 1.7.12
+      ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install actionlint
+        run: |
+          set -euo pipefail
+          archive="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          curl --fail --silent --show-error --location --output "$RUNNER_TEMP/$archive" \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/$archive"
+          echo "$ACTIONLINT_SHA256  $RUNNER_TEMP/$archive" | sha256sum --check
+          tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP" actionlint
+      - name: actionlint
+        run: |
+          "$RUNNER_TEMP/actionlint" -version
+          "$RUNNER_TEMP/actionlint" -color

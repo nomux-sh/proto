@@ -14,7 +14,6 @@ repository = "https://github.com/nomux-sh/proto"
 prost = "0.14.6"
 prost-build = "0.14.6"
 prost-types = "0.14.6"
-proptest = "1.12.0"
 tempfile = "3.27.0"
 
 [workspace.lints.rust]

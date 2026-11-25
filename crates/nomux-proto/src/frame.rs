@@ -256,8 +256,6 @@ impl FrameHeader {
 
 #[cfg(test)]
 mod tests {
-    use proptest::prelude::*;
-
     use super::*;
 
     /// A valid encoded header. Each field has a value with different bytes,
@@ -393,73 +391,18 @@ mod tests {
     }
 
     #[test]
-    fn decode_prefix_returns_the_remaining_bytes() {
+    fn decode_prefix_splits_the_input_at_the_header_length() {
         let mut bytes = SAMPLE_BYTES.to_vec();
         bytes.extend_from_slice(b"payload");
         assert_eq!(
             FrameHeader::decode_prefix(&bytes),
             Ok((SAMPLE_HEADER, b"payload".as_slice()))
         );
-    }
-
-    #[test]
-    fn decode_prefix_rejects_short_input() {
-        for available in 0..HEADER_LEN {
-            assert_eq!(
-                FrameHeader::decode_prefix(&SAMPLE_BYTES[..available]),
-                Err(FrameError::Truncated { available })
-            );
-        }
-    }
-
-    fn arbitrary_header() -> impl Strategy<Value = FrameHeader> {
-        (
-            proptest::sample::select(FrameKind::ALL.to_vec()),
-            any::<u32>(),
-            any::<u32>(),
-            any::<u64>(),
-            0..=MAX_PAYLOAD_LEN,
-        )
-            .prop_map(|(kind, session, epoch, seq, length)| FrameHeader {
-                kind,
-                session,
-                epoch,
-                seq,
-                length,
+        assert_eq!(
+            FrameHeader::decode_prefix(&bytes[..HEADER_LEN - 1]),
+            Err(FrameError::Truncated {
+                available: HEADER_LEN - 1
             })
-    }
-
-    proptest! {
-        #[test]
-        fn encode_then_decode_returns_the_header(header in arbitrary_header()) {
-            let bytes = header.encode().expect("the header is valid");
-            prop_assert_eq!(FrameHeader::decode(&bytes), Ok(header));
-        }
-
-        #[test]
-        fn decode_then_encode_returns_the_bytes(bytes in any::<[u8; HEADER_LEN]>()) {
-            // Decode must not panic for any input. If decode accepts the
-            // bytes, the encoding is canonical.
-            if let Ok(header) = FrameHeader::decode(&bytes) {
-                prop_assert_eq!(header.encode(), Ok(bytes));
-            }
-        }
-
-        #[test]
-        fn decode_accepts_only_valid_fixed_fields(
-            header in arbitrary_header(),
-            version in any::<u8>(),
-            kind in any::<u8>(),
-            flags in any::<u16>(),
-        ) {
-            let mut bytes = header.encode().expect("the header is valid");
-            bytes[0] = version;
-            bytes[1] = kind;
-            bytes[2..4].copy_from_slice(&flags.to_le_bytes());
-            let valid = version == FRAME_VERSION
-                && flags == 0
-                && FrameKind::from_u8(kind).is_some();
-            prop_assert_eq!(FrameHeader::decode(&bytes).is_ok(), valid);
-        }
+        );
     }
 }

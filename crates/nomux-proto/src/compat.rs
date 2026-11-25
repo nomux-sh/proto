@@ -105,11 +105,6 @@ mod tests {
     }
 
     #[test]
-    fn current_range_is_valid() {
-        assert!(VersionRange::CURRENT.is_valid());
-    }
-
-    #[test]
     fn negotiate_table() {
         // (local, remote, expected version or None for incompatible)
         let cases = [

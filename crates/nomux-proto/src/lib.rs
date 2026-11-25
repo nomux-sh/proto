@@ -5,7 +5,8 @@
 //! - [`wire::v1`]: the control messages: the envelope, the handshake, the
 //!   Host service and the Session service. `prost` generates these types
 //!   from the schemas in `proto/nomux/wire/v1/`.
-//! - [`frame`]: the fixed binary header of a terminal data frame.
+//! - [`frame`]: the fixed binary header of a terminal data frame and the
+//!   payload of the `End` frame.
 //! - [`compatibility`]: the control protocol version and the version rule of
 //!   the handshake.
 //!

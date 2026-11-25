@@ -69,6 +69,10 @@ Each service has its own block of 100 field numbers in `Request.body` and in `Re
 | 300 | `Session.Create` | `SessionCreateRequest` | `SessionCreateResponse` | Starts a new Session and gives its identifier, its state and the process ID of its command. |
 | 301 | `Session.List` | `SessionListRequest` | `SessionListResponse` | Gives all Sessions on the Host. |
 | 302 | `Session.Kill` | `SessionKillRequest` | `SessionKillResponse` | Ends a Session. The daemon answers after the command of the Session has ended. |
+| 303 | `Session.Attach` | `SessionAttachRequest` | `SessionAttachResponse` | Connects the client to the terminal of a Session. After the response, the client gets the screen and the output in terminal frames. |
+| 304 | `Session.Detach` | `SessionDetachRequest` | `SessionDetachResponse` | Ends each attach to a Session and gives the number of clients that were attached. The Session continues. |
+| 305 | `Session.Input` | `SessionInputRequest` | `SessionInputResponse` | Writes bytes to the terminal of a Session. |
+| 306 | `Session.Resize` | `SessionResizeRequest` | `SessionResizeResponse` | Changes the window size of a Session. |
 
 Errors of the Session service:
 
@@ -78,6 +82,10 @@ Errors of the Session service:
 | `SessionCreateRequest` | The Session was not ready in the permitted time. | `ERROR_CODE_TIMEOUT` |
 | `SessionKillRequest` | No Session has the identifier. | `ERROR_CODE_NOT_FOUND` |
 | `SessionKillRequest` | The command did not end in the permitted time. | `ERROR_CODE_TIMEOUT` |
+| `SessionAttachRequest`, `SessionDetachRequest`, `SessionInputRequest`, `SessionResizeRequest` | No Session has the identifier. | `ERROR_CODE_NOT_FOUND` |
+| `SessionAttachRequest`, `SessionInputRequest`, `SessionResizeRequest` | The daemon has no connection to the holder of the Session (state `SESSION_STATE_UNREACHABLE`). | `ERROR_CODE_FAILED` |
+| `SessionAttachRequest`, `SessionResizeRequest` | The window size is not valid. | `ERROR_CODE_FAILED` |
+| `SessionInputRequest` | The command of the Session has ended. | `ERROR_CODE_FAILED` |
 
 A Session has one of these states:
 
@@ -89,11 +97,35 @@ A Session has one of these states:
 
 When the command of a Session ends, the daemon removes the Session from its list.
 
+### Attach
+
+`Session.Attach` starts the terminal data path of [frame.md](frame.md). That document specifies the frames, the sequence numbers, the resume, the rule for a slow client and the end of an attach.
+
+- `SessionAttachResponse` is the last control message on its connection, in the two directions. After it, the connection carries terminal frames. To send a control request during an attach, a client uses a second connection.
+- More than one client can be attached to one Session at the same time. Each client gets the same output.
+- A client detaches itself when it closes the connection of its attach. No request is necessary.
+- `Session.Detach` detaches all the clients of a Session, for example from a different terminal. Each of these clients gets an `End` frame with the reason `Detached`. A `Session.Detach` for a Session without an attached client succeeds with the number 0.
+- When the command of a Session ends, each attached client gets the output that remains and then an `End` frame with the exit status.
+
+### Window size
+
+A Session has one window size. A window size is valid if `rows` and `columns` are from 1 to 65535 and the window has 1048576 cells at most.
+
+- The window size of a Session is the size of the last request that gave one: a `SessionAttachRequest` in which `rows` and `columns` are not 0, or a `SessionResizeRequest`.
+- A `SessionAttachRequest` in which `rows` and `columns` are 0 does not change the window size. A request in which only one of the two is 0 is not valid.
+- A client that is attached sends `Session.Resize` when its window gets a different size.
+- The daemon does not tell the other attached clients the new size. A client whose window has a different size shows the output as the command made it for the size of the Session.
+
+### Input
+
+An attached client sends its input in `Input` frames, which have no reply and have priority over the output. `Session.Input` is for a client that is not attached, for example a script: the daemon answers after the holder of the Session has the bytes.
+The two paths write to the same terminal. The daemon keeps the bytes of one request or of one frame together, and it does not define a sequence between two clients.
+
 ## Open items
 
 These items are not decided. The [roadmap](https://github.com/nomux-sh/docs/blob/main/src/content/docs/project/roadmap.md) gives the plan.
 
-- The messages to attach to a Session, to send input and to change the window size.
 - The environment and the window size of a new Session.
+- A request that detaches one client and not all the clients of a Session.
 - A state for a Session whose command has ended, with the exit status.
 - The other services: Project, Worktree, Agent, Team, Task, Events and Ext.

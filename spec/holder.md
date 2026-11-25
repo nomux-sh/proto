@@ -45,7 +45,7 @@ The specification in the `nomux` repository answers these questions:
 
 ## Open questions
 
-1. **Epoch and sequence number.** Which event starts a new epoch. The unit of the sequence number. The same question is open in [frame.md](frame.md).
+1. **Epoch and sequence number.** Which event starts a new epoch. The unit of the sequence number. [frame.md](frame.md) has the rule that the daemon uses now, without a journal: one epoch for the life of a Session, and the byte position of the ring buffer as the sequence number.
 2. **Journal and checkpoint format.** The format on disk, and whether this format is a part of the holder protocol or private to the holder.
 3. **Input line state.** The report of the prompt marks (OSC 133 B and C) and of the program status (OSC 7501).
 4. **Warm pool.** The message that assigns a session to a holder from the warm pool.

@@ -1,0 +1,12 @@
+# buf configuration, format v2.
+# The module has no `name`: this repository does not use the Buf Schema
+# Registry or any other external schema registry.
+version: v2
+modules:
+  - path: proto
+lint:
+  use:
+    - STANDARD
+breaking:
+  use:
+    - FILE

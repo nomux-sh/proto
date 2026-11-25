@@ -6,7 +6,8 @@ use core::fmt;
 
 /// The newest control protocol version that this crate implements.
 ///
-/// The value is a draft until the first release. See `spec/compatibility.md`.
+/// Until version 1.0.0 of the product, builds with the same value can be
+/// incompatible. See `spec/compatibility.md`.
 pub const PROTOCOL_VERSION: u32 = 1;
 
 /// The oldest control protocol version that this crate can use.

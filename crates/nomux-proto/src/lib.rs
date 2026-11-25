@@ -2,16 +2,17 @@
 //!
 //! This crate has three parts:
 //!
-//! - [`wire::v1`]: the control messages. `prost` generates these types from
-//!   the schemas in `proto/nomux/wire/v1/`.
+//! - [`wire::v1`]: the control messages of the handshake and the envelope.
+//!   `prost` generates these types from the schemas in `proto/nomux/wire/v1/`.
 //! - [`frame`]: the fixed binary header of a terminal data frame.
 //! - [`compatibility`]: the control protocol version and the version rule of
 //!   the handshake.
 //!
-//! The generated code is in the repository. A build of this crate does not
+//! The generated code is a part of the crate. A build of this crate does not
 //! start `buf` or `protoc`.
 //!
-//! The protocol is a draft. It can change until ADR-0002 is accepted.
+//! Versions earlier than 1.0.0 are pre-releases: interfaces can change
+//! between minor versions. The frame header layout is a draft.
 
 pub mod compatibility;
 pub mod frame;

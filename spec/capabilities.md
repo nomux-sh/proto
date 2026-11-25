@@ -1,6 +1,6 @@
 # Capability flag registry
 
-**Status: DRAFT.** The rules can change until ADR-0002 is accepted.
+**Status: DRAFT.** The rules can change in a minor version until version 1.0.0.
 
 A capability flag is the name of one optional feature of the nomux protocol.
 This document is the registry of all flag names.

@@ -4,7 +4,8 @@
 //! then `length` bytes of payload. The exact layout is specified in
 //! `spec/frame.md`.
 //!
-//! STATUS: DRAFT. The layout can change until ADR-0002 is accepted.
+//! The layout is a draft. It can change in a minor version of this crate
+//! until version 1.0.0.
 //!
 //! All integers are little-endian.
 //!

@@ -99,15 +99,15 @@ pub struct Request {
     /// the same connection.
     #[prost(uint64, tag = "1")]
     pub id: u64,
-    /// The request body. Services are added per milestone. See the field number
-    /// plan at the top of this file.
+    /// The request body. Each new service adds its requests here. See the field
+    /// number plan at the top of this file.
     #[prost(oneof = "request::Body", tags = "100")]
     pub body: ::core::option::Option<request::Body>,
 }
 /// Nested message and enum types in `Request`.
 pub mod request {
-    /// The request body. Services are added per milestone. See the field number
-    /// plan at the top of this file.
+    /// The request body. Each new service adds its requests here. See the field
+    /// number plan at the top of this file.
     #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
     pub enum Body {
         /// Handshake: the first request on a connection.
@@ -121,15 +121,15 @@ pub struct Response {
     /// The `id` of the request that this response answers.
     #[prost(uint64, tag = "1")]
     pub id: u64,
-    /// The result of the request. Services are added per milestone. See the
-    /// field number plan at the top of this file.
+    /// The result of the request. Each new service adds its results here. See
+    /// the field number plan at the top of this file.
     #[prost(oneof = "response::Result", tags = "2, 100")]
     pub result: ::core::option::Option<response::Result>,
 }
 /// Nested message and enum types in `Response`.
 pub mod response {
-    /// The result of the request. Services are added per milestone. See the
-    /// field number plan at the top of this file.
+    /// The result of the request. Each new service adds its results here. See
+    /// the field number plan at the top of this file.
     #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
     pub enum Result {
         /// The request failed.
@@ -142,8 +142,8 @@ pub mod response {
 }
 /// A message from the daemon that no request asked for.
 ///
-/// Event bodies are not defined yet. The Events service (a later milestone)
-/// adds a `body` oneof with field numbers from the field number plan.
+/// Event bodies are not defined yet. The Events service adds a `body` oneof
+/// with field numbers from the field number plan.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Event {
     /// The position of the event in the event log of the host. The value
@@ -179,8 +179,8 @@ pub mod envelope {
 ///
 /// Each value is equal to the related exit code of the `nomux` command-line
 /// client. Values 1, 2 and 3 are the other exit codes (error, not found,
-/// timeout). They are not defined here: the milestone that adds a service
-/// which returns them also adds them.
+/// timeout). They are not defined here: the change that adds a service which
+/// returns them also adds them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum ErrorCode {

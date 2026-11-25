@@ -1,0 +1,108 @@
+// The envelope of the nomux control protocol.
+//
+// Each message on the control channel is one `Envelope`. An envelope contains
+// a request, a response, or an event:
+//
+// - The client sends a `Request` with an `id`.
+// - The daemon sends one `Response` with the same `id`.
+// - The daemon also sends `Event` messages that no request asked for.
+//
+// STATUS: DRAFT until ADR-0002 is accepted.
+//
+// Field number plan for the `body` and `result` oneofs. Field numbers are
+// permanent, thus each service has its own block:
+//
+//   1 to 15      Envelope fields (id, error). These numbers use one tag byte.
+//   16 to 99     Not assigned.
+//   100 to 199   Handshake service.
+//   200 and up   Not assigned. Each new service takes the next free block of
+//                100 numbers in the milestone that adds the service.
+//
+// A request and its response use the same field number where possible.
+// The plan is a comment and not a `reserved` statement: `buf breaking` does
+// not let you delete a reserved range, and each block must stay available to
+// its service.
+
+syntax = "proto3";
+
+package nomux.wire.v1;
+
+import "nomux/wire/v1/handshake.proto";
+
+// The reason for a failed request.
+//
+// Each value is equal to the related exit code of the `nomux` command-line
+// client. Values 1, 2 and 3 are the other exit codes (error, not found,
+// timeout). They are not defined here: the milestone that adds a service
+// which returns them also adds them.
+enum ErrorCode {
+  // The daemon did not set the field. The client treats this as an error.
+  ERROR_CODE_UNSPECIFIED = 0;
+  // The client does not have permission. For the handshake: the token is
+  // missing, not valid, or revoked.
+  ERROR_CODE_PERMISSION_DENIED = 4;
+  // The client and the daemon have no common control protocol version.
+  // See spec/compatibility.md.
+  ERROR_CODE_VERSION_INCOMPATIBLE = 5;
+}
+
+// The failure result of a request.
+message Error {
+  // The reason for the failure.
+  ErrorCode code = 1;
+  // A message in English for the user. The text is not stable: clients must
+  // not parse it.
+  string message = 2;
+}
+
+// A numbered request from the client to the daemon.
+message Request {
+  // The request number. The client selects the value. The value is not 0 and
+  // is different from the `id` of each request that has no response yet on
+  // the same connection.
+  uint64 id = 1;
+  // The request body. Services are added per milestone. See the field number
+  // plan at the top of this file.
+  oneof body {
+    // Handshake: the first request on a connection.
+    Hello hello = 100;
+  }
+}
+
+// The response from the daemon to one request.
+message Response {
+  // The `id` of the request that this response answers.
+  uint64 id = 1;
+  // The result of the request. Services are added per milestone. See the
+  // field number plan at the top of this file.
+  oneof result {
+    // The request failed.
+    Error error = 2;
+    // Handshake: the reply to `Hello`.
+    Welcome welcome = 100;
+  }
+}
+
+// A message from the daemon that no request asked for.
+//
+// Event bodies are not defined yet. The Events service (a later milestone)
+// adds a `body` oneof with field numbers from the field number plan.
+message Event {
+  // The position of the event in the event log of the host. The value
+  // increases with each event. A client can resume from the last value that
+  // it received.
+  uint64 seq = 1;
+}
+
+// One message on the control channel.
+message Envelope {
+  // The content of the envelope.
+  oneof kind {
+    // A request from the client.
+    Request request = 1;
+    // A response from the daemon.
+    Response response = 2;
+    // An event from the daemon.
+    Event event = 3;
+  }
+}

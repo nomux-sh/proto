@@ -104,8 +104,8 @@ message WorktreeMoveToTrashRequest {
   // The absolute path in the trash place. Its parent directory exists, and
   // the path does not.
   string trash_path = 3;
-  // The commit of `HEAD` that the plan saw. The extension refuses the move
-  // when `HEAD` is different.
+  // The commit of `HEAD` that the plan saw. When `HEAD` is different, the
+  // call fails and nothing moves.
   string expected_head = 4;
   // The ignored paths that may go with the directory, relative to it: the
   // build output that the daemon did not delete, and, with
@@ -148,8 +148,8 @@ message WorktreeDeleteRequest {
   // The absolute path of the directory of the linked worktree: in the trash
   // place, or, without the grace time, the directory of the worktree.
   string path = 2;
-  // The commit of `HEAD` that the plan saw. The extension refuses the
-  // removal when `HEAD` is different.
+  // The commit of `HEAD` that the plan saw. When `HEAD` is different, the
+  // call fails and nothing is removed.
   string expected_head = 3;
   // The ignored paths that the removal may delete, relative to the
   // directory.

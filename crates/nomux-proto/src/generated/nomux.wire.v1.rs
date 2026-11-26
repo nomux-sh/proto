@@ -3793,8 +3793,8 @@ pub struct WorktreeMoveToTrashRequest {
     /// the path does not.
     #[prost(string, tag = "3")]
     pub trash_path: ::prost::alloc::string::String,
-    /// The commit of `HEAD` that the plan saw. The extension refuses the move
-    /// when `HEAD` is different.
+    /// The commit of `HEAD` that the plan saw. When `HEAD` is different, the
+    /// call fails and nothing moves.
     #[prost(string, tag = "4")]
     pub expected_head: ::prost::alloc::string::String,
     /// The ignored paths that may go with the directory, relative to it: the
@@ -3848,8 +3848,8 @@ pub struct WorktreeDeleteRequest {
     /// place, or, without the grace time, the directory of the worktree.
     #[prost(string, tag = "2")]
     pub path: ::prost::alloc::string::String,
-    /// The commit of `HEAD` that the plan saw. The extension refuses the
-    /// removal when `HEAD` is different.
+    /// The commit of `HEAD` that the plan saw. When `HEAD` is different, the
+    /// call fails and nothing is removed.
     #[prost(string, tag = "3")]
     pub expected_head: ::prost::alloc::string::String,
     /// The ignored paths that the removal may delete, relative to the

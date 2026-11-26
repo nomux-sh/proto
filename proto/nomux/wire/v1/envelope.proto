@@ -116,6 +116,8 @@ message Request {
     SessionHibernateRequest session_hibernate = 311;
     // Session.SetPinned.
     SessionSetPinnedRequest session_set_pinned = 312;
+    // Session.Rename.
+    SessionRenameRequest session_rename = 313;
     // Ext.List.
     ExtListRequest ext_list = 400;
     // Ext.Inspect.
@@ -201,6 +203,8 @@ message Response {
     SessionHibernateResponse session_hibernate = 311;
     // Session.SetPinned.
     SessionSetPinnedResponse session_set_pinned = 312;
+    // Session.Rename.
+    SessionRenameResponse session_rename = 313;
     // Ext.List.
     ExtListResponse ext_list = 400;
     // Ext.Inspect.

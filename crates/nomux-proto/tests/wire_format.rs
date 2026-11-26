@@ -241,6 +241,7 @@ fn session_service_wire_bytes_are_stable() {
         request_bytes(request::Body::SessionCreate(SessionCreateRequest {
             command: vec!["a".to_owned(), "b".to_owned()],
             working_directory: "/".to_owned(),
+            ..SessionCreateRequest::default()
         })),
         [
             0x08, 0x01, // id = 1
@@ -282,6 +283,7 @@ fn session_service_wire_bytes_are_stable() {
     assert_eq!(
         response_bytes(response::Result::SessionCreate(SessionCreateResponse {
             session: Some(session.clone()),
+            created: false,
         })),
         created,
     );
@@ -411,6 +413,9 @@ fn the_description_of_a_session_has_stable_wire_bytes() {
         resolved_working_directory: "/r".to_owned(),
         hibernation: None,
         pinned: false,
+        name: String::new(),
+        last_attached_at: 0,
+        attached_clients: 0,
     };
     assert_eq!(
         session.encode_to_vec(),

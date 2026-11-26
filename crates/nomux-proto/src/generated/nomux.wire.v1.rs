@@ -1263,6 +1263,20 @@ pub struct Session {
     /// The user excluded the Session from automatic hibernation.
     #[prost(bool, tag = "15")]
     pub pinned: bool,
+    /// The session name. The value is empty if the Session has no name, and
+    /// from a daemon without the capability `session_names`. spec/control.md,
+    /// "Names", has the rules.
+    #[prost(string, tag = "16")]
+    pub name: ::prost::alloc::string::String,
+    /// When a client attached to the Session the last time: seconds after the
+    /// Unix epoch. The value is 0 if no client attached, and from a daemon
+    /// without the capability `session_activity`.
+    #[prost(uint64, tag = "17")]
+    pub last_attached_at: u64,
+    /// The number of clients that are attached to the Session now. The value is
+    /// 0 from a daemon without the capability `session_activity`.
+    #[prost(uint32, tag = "18")]
+    pub attached_clients: u32,
 }
 /// The last hibernation of a Session.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -1306,13 +1320,29 @@ pub struct SessionCreateRequest {
     /// the value is empty, the daemon uses the home directory of the user.
     #[prost(string, tag = "2")]
     pub working_directory: ::prost::alloc::string::String,
+    /// The name of the new Session. If the value is empty, the Session has no
+    /// name. Only for a daemon with the capability `session_names`:
+    /// spec/control.md, "Names".
+    #[prost(string, tag = "3")]
+    pub name: ::prost::alloc::string::String,
+    /// If the value is true and a Session that is not ended has the name
+    /// `name`, the daemon creates no Session and gives that Session. The daemon
+    /// reads the value only if `name` is not empty.
+    #[prost(bool, tag = "4")]
+    pub reuse_existing: bool,
 }
 /// The reply to `SessionCreateRequest`.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct SessionCreateResponse {
-    /// The new Session.
+    /// The new Session, or the Session that has the name of the request if
+    /// `created` is false.
     #[prost(message, optional, tag = "1")]
     pub session: ::core::option::Option<Session>,
+    /// The value is false if the daemon gave an existing Session for
+    /// `reuse_existing`. A daemon without the capability `session_names` does
+    /// not set the field.
+    #[prost(bool, tag = "2")]
+    pub created: bool,
 }
 /// Session.List: asks for the Sessions on the Host.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
@@ -1565,6 +1595,25 @@ pub struct SessionSetPinnedRequest {
 /// The reply to `SessionSetPinnedRequest`.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct SessionSetPinnedResponse {}
+/// Session.Rename: gives a Session a different name, or removes its name.
+/// Only for a daemon with the capability `session_names`.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SessionRenameRequest {
+    /// The identifier of the Session.
+    #[prost(string, tag = "1")]
+    pub id: ::prost::alloc::string::String,
+    /// The new name of the Session. If the value is empty, the daemon removes
+    /// the name.
+    #[prost(string, tag = "2")]
+    pub name: ::prost::alloc::string::String,
+}
+/// The reply to `SessionRenameRequest`.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SessionRenameResponse {
+    /// The Session with its new name.
+    #[prost(message, optional, tag = "1")]
+    pub session: ::core::option::Option<Session>,
+}
 /// Event: the daemon hibernated a Session. The fields of the trigger are set
 /// only for its reason.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -2096,7 +2145,7 @@ pub struct Request {
     /// number plan at the top of this file.
     #[prost(
         oneof = "request::Body",
-        tags = "100, 200, 201, 300, 301, 302, 303, 304, 305, 306, 307, 308, 309, 310, 311, 312, 400, 401, 402, 403, 404, 405, 500, 501, 502, 600, 700, 701, 702, 800, 801, 802, 803, 804, 805, 806"
+        tags = "100, 200, 201, 300, 301, 302, 303, 304, 305, 306, 307, 308, 309, 310, 311, 312, 313, 400, 401, 402, 403, 404, 405, 500, 501, 502, 600, 700, 701, 702, 800, 801, 802, 803, 804, 805, 806"
     )]
     pub body: ::core::option::Option<request::Body>,
 }
@@ -2154,6 +2203,9 @@ pub mod request {
         /// Session.SetPinned.
         #[prost(message, tag = "312")]
         SessionSetPinned(super::SessionSetPinnedRequest),
+        /// Session.Rename.
+        #[prost(message, tag = "313")]
+        SessionRename(super::SessionRenameRequest),
         /// Ext.List.
         #[prost(message, tag = "400")]
         ExtList(super::ExtListRequest),
@@ -2226,7 +2278,7 @@ pub struct Response {
     /// the field number plan at the top of this file.
     #[prost(
         oneof = "response::Result",
-        tags = "2, 100, 200, 201, 300, 301, 302, 303, 304, 305, 306, 307, 308, 309, 310, 311, 312, 400, 401, 402, 403, 404, 405, 500, 501, 502, 600, 700, 701, 702, 800, 801, 802, 803, 804, 805, 806"
+        tags = "2, 100, 200, 201, 300, 301, 302, 303, 304, 305, 306, 307, 308, 309, 310, 311, 312, 313, 400, 401, 402, 403, 404, 405, 500, 501, 502, 600, 700, 701, 702, 800, 801, 802, 803, 804, 805, 806"
     )]
     pub result: ::core::option::Option<response::Result>,
 }
@@ -2288,6 +2340,9 @@ pub mod response {
         /// Session.SetPinned.
         #[prost(message, tag = "312")]
         SessionSetPinned(super::SessionSetPinnedResponse),
+        /// Session.Rename.
+        #[prost(message, tag = "313")]
+        SessionRename(super::SessionRenameResponse),
         /// Ext.List.
         #[prost(message, tag = "400")]
         ExtList(super::ExtListResponse),

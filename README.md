@@ -37,14 +37,17 @@ proto/nomux/wire/v1/         protobuf schemas, package nomux.wire.v1
   hooks.proto                Hooks service: Event, Plan, Adapters
   workspace.proto            Workspace service: Tree, AddProject, RemoveProject, CreateGroup,
                              RemoveGroup, Rename, Move, and its event
-  worktree.proto             Worktree service: List
+  worktree.proto             Worktree service: List, Plan, Clean, Mark, Trash, Restore,
+                             EmptyTrash, and its events
   adapter.proto              Payloads between the daemon and an adapter extension
-  worktree_facts.proto       Payloads between the daemon and the git extension
+  worktree_facts.proto       Payloads between the daemon and the git extension: the facts
+                             and the changes of git
 spec/
   control.md                 control channel: framing, error codes, services and their messages
   adapter.md                 payloads between the daemon and an adapter extension
   workspace.md               workspace tree: Groups and Projects, revision, limits, examples
-  worktree.md                Worktrees: states, flags, merge rules, refusals, sizes, the git facts
+  worktree.md                Worktrees: states, flags, merge rules, refusals, sizes, plan,
+                             clean, trash place, events, the methods of the git extension
   frame.md                   terminal frames (binary, not protobuf): header, payloads, terminal data path
   holder.md                  holder protocol: versioning rule, open questions
   capabilities.md            capability flag registry

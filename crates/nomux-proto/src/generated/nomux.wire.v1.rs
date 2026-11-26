@@ -636,6 +636,10 @@ pub enum EventType {
     SessionWakeFailed = 7,
     /// `SessionMemoryLimitReached`.
     SessionMemoryLimitReached = 8,
+    /// `WorktreeChanged`.
+    WorktreeChanged = 9,
+    /// `WorktreeDiskPressure`.
+    WorktreeDiskPressure = 10,
 }
 impl EventType {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -653,6 +657,8 @@ impl EventType {
             Self::SessionWoken => "EVENT_TYPE_SESSION_WOKEN",
             Self::SessionWakeFailed => "EVENT_TYPE_SESSION_WAKE_FAILED",
             Self::SessionMemoryLimitReached => "EVENT_TYPE_SESSION_MEMORY_LIMIT_REACHED",
+            Self::WorktreeChanged => "EVENT_TYPE_WORKTREE_CHANGED",
+            Self::WorktreeDiskPressure => "EVENT_TYPE_WORKTREE_DISK_PRESSURE",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -669,6 +675,8 @@ impl EventType {
             "EVENT_TYPE_SESSION_MEMORY_LIMIT_REACHED" => {
                 Some(Self::SessionMemoryLimitReached)
             }
+            "EVENT_TYPE_WORKTREE_CHANGED" => Some(Self::WorktreeChanged),
+            "EVENT_TYPE_WORKTREE_DISK_PRESSURE" => Some(Self::WorktreeDiskPressure),
             _ => None,
         }
     }
@@ -2318,6 +2326,19 @@ pub struct WorktreeInfo {
     /// text for the user. Empty when it knows them.
     #[prost(string, tag = "16")]
     pub facts_unavailable_reason: ::prost::alloc::string::String,
+    /// The agent tool that probably made the Worktree, found by its directory
+    /// or by the reason of its lock: `claude-code`, `codex`, `cursor` or
+    /// `orca`. Empty when the daemon does not know a tool. A client shows the
+    /// value as a guess.
+    #[prost(string, tag = "17")]
+    pub tool: ::prost::alloc::string::String,
+    /// The mark that the user set.
+    #[prost(enumeration = "WorktreeMark", tag = "18")]
+    pub mark: i32,
+    /// The identifier of the trash entry when the Worktree is in the trash
+    /// place. Empty otherwise.
+    #[prost(string, tag = "19")]
+    pub trash_id: ::prost::alloc::string::String,
 }
 /// The Worktrees of one Project.
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -2371,6 +2392,318 @@ pub struct WorktreeListResponse {
     #[prost(message, repeated, tag = "1")]
     pub projects: ::prost::alloc::vec::Vec<ProjectWorktrees>,
 }
+/// One item of a plan.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct WorktreePlanItem {
+    /// The identifier of the Project.
+    #[prost(string, tag = "1")]
+    pub project_id: ::prost::alloc::string::String,
+    /// The absolute path of the directory of the Worktree.
+    #[prost(string, tag = "2")]
+    pub worktree_path: ::prost::alloc::string::String,
+    /// What the item does.
+    #[prost(enumeration = "WorktreePlanStep", tag = "3")]
+    pub step: i32,
+    /// `WORKTREE_PLAN_STEP_BUILD_OUTPUT`: the absolute path of the directory
+    /// that the step deletes. `WORKTREE_PLAN_STEP_TRASH`: the path in the trash
+    /// place. `WORKTREE_PLAN_STEP_REPAIR`: the directory that the daemon
+    /// found. Empty for the other steps.
+    #[prost(string, tag = "4")]
+    pub path: ::prost::alloc::string::String,
+    /// `WORKTREE_PLAN_STEP_BUILD_OUTPUT`: the identifier of the build-output
+    /// rule that accepted the directory.
+    #[prost(string, tag = "5")]
+    pub rule: ::prost::alloc::string::String,
+    /// The allocated bytes that the step frees, as the size of the Worktree
+    /// counts them: an upper bound. 0 when the size is not known.
+    #[prost(uint64, tag = "6")]
+    pub bytes: u64,
+    /// The branch of the Worktree. Empty for a detached `HEAD`.
+    #[prost(string, tag = "7")]
+    pub branch: ::prost::alloc::string::String,
+    /// The commit of `HEAD`. A clean skips the item if `HEAD` moved.
+    #[prost(string, tag = "8")]
+    pub head: ::prost::alloc::string::String,
+    /// Why the item does not run, the most important reason first. Empty when
+    /// it runs.
+    #[prost(enumeration = "WorktreeRefusal", repeated, tag = "9")]
+    pub refusals: ::prost::alloc::vec::Vec<i32>,
+    /// Facts that the user reads before a clean, as English text: for example
+    /// a Session without a process in the Worktree, or a tool that keeps a
+    /// record of the Worktree.
+    #[prost(string, repeated, tag = "10")]
+    pub warnings: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// `WORKTREE_PLAN_STEP_TRASH` and `WORKTREE_PLAN_STEP_DELETE`: the removal
+    /// also deletes the branch, if it is still merged by the strict rule and
+    /// its tip is still `head`.
+    #[prost(bool, tag = "11")]
+    pub deletes_branch: bool,
+    /// Why the branch stays when the request asked for `delete_branch`, as
+    /// English text.
+    #[prost(string, tag = "12")]
+    pub branch_kept_reason: ::prost::alloc::string::String,
+    /// The ignored paths that are not build output, relative to the directory
+    /// of the Worktree: the paths that the refusal
+    /// `WORKTREE_REFUSAL_IGNORED_USER_FILES` protects, or, with
+    /// `include_ignored`, the paths that go with the directory.
+    #[prost(string, repeated, tag = "13")]
+    pub ignored_user_paths: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
+/// Worktree.Plan: asks for the list of what a clean would remove. The daemon
+/// keeps the plan and gives it an identifier. The plan changes nothing.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct WorktreePlanRequest {
+    /// The identifier of a Project. Empty for each Project of the workspace
+    /// tree.
+    #[prost(string, tag = "1")]
+    pub project_id: ::prost::alloc::string::String,
+    /// What the clean removes.
+    #[prost(enumeration = "WorktreeCleanAction", tag = "2")]
+    pub action: i32,
+    /// The absolute paths of the Worktrees to clean. Empty for each Worktree of
+    /// the Projects. A main worktree gets a build output step only when this
+    /// list has it.
+    #[prost(string, repeated, tag = "3")]
+    pub worktree_paths: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Also delete the branch of each Worktree whose branch is merged by the
+    /// strict rule.
+    #[prost(bool, tag = "4")]
+    pub delete_branch: bool,
+    /// Move a Worktree with commits that are not pushed to the trash. Its
+    /// branch keeps the commits.
+    #[prost(bool, tag = "5")]
+    pub allow_unpushed: bool,
+    /// Move the ignored paths that are not build output with the directory of
+    /// the Worktree. They are deleted at the end of the grace time.
+    #[prost(bool, tag = "6")]
+    pub include_ignored: bool,
+    /// Remove each Worktree now, without the grace time. Also for a Worktree
+    /// that has no trash place.
+    #[prost(bool, tag = "7")]
+    pub now: bool,
+}
+/// The reply to `WorktreePlanRequest`.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct WorktreePlanResponse {
+    /// The identifier of the plan, for `WorktreeCleanRequest`.
+    #[prost(string, tag = "1")]
+    pub plan_id: ::prost::alloc::string::String,
+    /// The items, for each Worktree its build output first. An item with a
+    /// refusal does not run.
+    #[prost(message, repeated, tag = "2")]
+    pub items: ::prost::alloc::vec::Vec<WorktreePlanItem>,
+    /// The sum of `bytes` of the items without a refusal.
+    #[prost(uint64, tag = "3")]
+    pub total_bytes: u64,
+    /// The grace time of the trash place in milliseconds.
+    #[prost(uint64, tag = "4")]
+    pub grace_ms: u64,
+}
+/// Worktree.Clean: runs the items of a plan.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct WorktreeCleanRequest {
+    /// The identifier from `WorktreePlanResponse`.
+    #[prost(string, tag = "1")]
+    pub plan_id: ::prost::alloc::string::String,
+}
+/// What a clean did with one item of the plan.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct WorktreeCleanResult {
+    /// The item of the plan. For `WORKTREE_CLEAN_OUTCOME_REFUSED`, `refusals`
+    /// has the reasons of the refusal.
+    #[prost(message, optional, tag = "1")]
+    pub item: ::core::option::Option<WorktreePlanItem>,
+    /// The result.
+    #[prost(enumeration = "WorktreeCleanOutcome", tag = "2")]
+    pub outcome: i32,
+    /// What happened, as English text. Empty for `WORKTREE_CLEAN_OUTCOME_DONE`.
+    #[prost(string, tag = "3")]
+    pub message: ::prost::alloc::string::String,
+}
+/// The reply to `WorktreeCleanRequest`.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct WorktreeCleanResponse {
+    /// One result for each item of the plan, in the sequence of the plan.
+    #[prost(message, repeated, tag = "1")]
+    pub results: ::prost::alloc::vec::Vec<WorktreeCleanResult>,
+    /// The sum of `bytes` of the items that ran.
+    #[prost(uint64, tag = "2")]
+    pub planned_bytes: u64,
+    /// The increase of the free bytes of the file systems of the Worktrees
+    /// from the start to the end of the clean. Other programs can change the
+    /// free space at the same time.
+    #[prost(uint64, tag = "3")]
+    pub freed_bytes: u64,
+}
+/// Worktree.Mark: sets or removes the mark of a Worktree.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct WorktreeMarkRequest {
+    /// The absolute path of the directory of the Worktree.
+    #[prost(string, tag = "1")]
+    pub path: ::prost::alloc::string::String,
+    /// The new mark. `WORKTREE_MARK_UNSPECIFIED` removes the mark.
+    #[prost(enumeration = "WorktreeMark", tag = "2")]
+    pub mark: i32,
+}
+/// The reply to `WorktreeMarkRequest`.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct WorktreeMarkResponse {}
+/// One Worktree in the trash place.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct WorktreeTrashEntry {
+    /// The identifier of the entry.
+    #[prost(string, tag = "1")]
+    pub id: ::prost::alloc::string::String,
+    /// The identifier of the Project.
+    #[prost(string, tag = "2")]
+    pub project_id: ::prost::alloc::string::String,
+    /// The absolute path of the directory before the move: a restore moves the
+    /// directory back to it.
+    #[prost(string, tag = "3")]
+    pub path: ::prost::alloc::string::String,
+    /// The absolute path of the directory in the trash place.
+    #[prost(string, tag = "4")]
+    pub trash_path: ::prost::alloc::string::String,
+    /// The branch of the Worktree.
+    #[prost(string, tag = "5")]
+    pub branch: ::prost::alloc::string::String,
+    /// The commit of `HEAD` at the move.
+    #[prost(string, tag = "6")]
+    pub head: ::prost::alloc::string::String,
+    /// When the directory moved: milliseconds after the Unix epoch.
+    #[prost(uint64, tag = "7")]
+    pub trashed_at_ms: u64,
+    /// The end of the grace time: milliseconds after the Unix epoch. After it,
+    /// the daemon removes the Worktree.
+    #[prost(uint64, tag = "8")]
+    pub expires_at_ms: u64,
+    /// The removal also deletes the branch, if it is still merged by the
+    /// strict rule and its tip is still `head`.
+    #[prost(bool, tag = "9")]
+    pub deletes_branch: bool,
+}
+/// Worktree.Trash: asks for the entries of the trash place.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct WorktreeTrashRequest {
+    /// The identifier of a Project. Empty for each Project.
+    #[prost(string, tag = "1")]
+    pub project_id: ::prost::alloc::string::String,
+}
+/// The reply to `WorktreeTrashRequest`.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct WorktreeTrashResponse {
+    /// The entries, the oldest first.
+    #[prost(message, repeated, tag = "1")]
+    pub entries: ::prost::alloc::vec::Vec<WorktreeTrashEntry>,
+}
+/// Worktree.Restore: moves a Worktree from the trash place back to its
+/// directory.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct WorktreeRestoreRequest {
+    /// The identifier of the entry, the absolute path of the directory before
+    /// the move, or the last part of that path when one entry has it.
+    #[prost(string, tag = "1")]
+    pub name: ::prost::alloc::string::String,
+}
+/// The reply to `WorktreeRestoreRequest`.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct WorktreeRestoreResponse {
+    /// The entry that the daemon restored. It is no longer in the trash place.
+    #[prost(message, optional, tag = "1")]
+    pub entry: ::core::option::Option<WorktreeTrashEntry>,
+}
+/// Worktree.EmptyTrash: removes Worktrees of the trash place before the end
+/// of their grace time.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct WorktreeEmptyTrashRequest {
+    /// The identifiers of the entries. Empty for each entry.
+    #[prost(string, repeated, tag = "1")]
+    pub ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
+/// What the removal of one trash entry did.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct WorktreeTrashRemoval {
+    /// The entry.
+    #[prost(message, optional, tag = "1")]
+    pub entry: ::core::option::Option<WorktreeTrashEntry>,
+    /// True when the Worktree was removed.
+    #[prost(bool, tag = "2")]
+    pub removed: bool,
+    /// Why the Worktree stays, as English text. Empty when it was removed.
+    #[prost(string, tag = "3")]
+    pub message: ::prost::alloc::string::String,
+    /// True when the branch was deleted.
+    #[prost(bool, tag = "4")]
+    pub branch_deleted: bool,
+    /// Why the branch stays when the entry has `deletes_branch`, as English
+    /// text.
+    #[prost(string, tag = "5")]
+    pub branch_kept_reason: ::prost::alloc::string::String,
+}
+/// The reply to `WorktreeEmptyTrashRequest`.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct WorktreeEmptyTrashResponse {
+    /// One removal for each entry.
+    #[prost(message, repeated, tag = "1")]
+    pub removals: ::prost::alloc::vec::Vec<WorktreeTrashRemoval>,
+}
+/// Event: a clean, a restore, the end of a grace time or a mark changed a
+/// Worktree.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct WorktreeChanged {
+    /// The identifier of the Project.
+    #[prost(string, tag = "1")]
+    pub project_id: ::prost::alloc::string::String,
+    /// The absolute path of the directory of the Worktree before the change.
+    #[prost(string, tag = "2")]
+    pub path: ::prost::alloc::string::String,
+    /// What changed.
+    #[prost(enumeration = "WorktreeChange", tag = "3")]
+    pub change: i32,
+    /// The bytes that the change freed, as the plan counted them. 0 when not
+    /// known.
+    #[prost(uint64, tag = "4")]
+    pub bytes: u64,
+    /// True when a rule of the settings made the change, and no command of the
+    /// user.
+    #[prost(bool, tag = "5")]
+    pub automatic: bool,
+    /// The branch of the Worktree.
+    #[prost(string, tag = "6")]
+    pub branch: ::prost::alloc::string::String,
+    /// True when the change also deleted the branch.
+    #[prost(bool, tag = "7")]
+    pub branch_deleted: bool,
+}
+/// Event: the free space of a file system that has Worktrees went to a
+/// different level.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct WorktreeDiskPressure {
+    /// A directory on the file system: the directory of a Project.
+    #[prost(string, tag = "1")]
+    pub path: ::prost::alloc::string::String,
+    /// The new level.
+    #[prost(enumeration = "WorktreeDiskLevel", tag = "2")]
+    pub level: i32,
+    /// The free bytes for a user without special rights.
+    #[prost(uint64, tag = "3")]
+    pub free_bytes: u64,
+    /// The free bytes below which the level starts. 0 for
+    /// `WORKTREE_DISK_LEVEL_UNSPECIFIED`.
+    #[prost(uint64, tag = "4")]
+    pub threshold_bytes: u64,
+    /// The bytes of the Worktrees on the file system that a clean of finished
+    /// Worktrees could remove now, as the last sizes count them.
+    #[prost(uint64, tag = "5")]
+    pub reclaimable_bytes: u64,
+    /// The part of `reclaimable_bytes` in build output.
+    #[prost(uint64, tag = "6")]
+    pub build_output_bytes: u64,
+    /// The command that shows the plan and changes nothing, for example
+    /// `nomux worktree clean --all --dry-run`.
+    #[prost(string, tag = "7")]
+    pub command: ::prost::alloc::string::String,
+}
 /// The state of a Worktree. A Worktree has one state.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -2380,7 +2713,8 @@ pub enum WorktreeState {
     /// A Session that is not ended has its working directory in the Worktree.
     Active = 1,
     /// Not active, and the branch of the Worktree is merged into the base
-    /// branch: see `WorktreeMergedBy`.
+    /// branch (see `WorktreeMergedBy`), or the user marked the Worktree
+    /// finished (`WORKTREE_MARK_FINISHED`).
     Finished = 2,
     /// Not active, not finished, and no activity for the stale time.
     Stale = 3,
@@ -2436,7 +2770,8 @@ pub enum WorktreeFlag {
     /// The Worktree has ignored paths that are not build output: for example
     /// `.env` or a local database.
     IgnoredUserFiles = 6,
-    /// A process of the Host has its current directory in the Worktree.
+    /// A process of the Host has its current directory in the Worktree, or a
+    /// build holds the lock of a build output directory of the Worktree.
     Busy = 7,
     /// The directory of the Worktree does not exist. git calls the Worktree
     /// prunable.
@@ -2530,8 +2865,7 @@ impl WorktreeMergedBy {
     }
 }
 /// Why a removal of the directory of a Worktree is refused. The removal
-/// keeps the branch. This version of the protocol removes nothing: the
-/// reasons tell the user what a removal would lose.
+/// keeps the branch. The reasons tell the user what a removal would lose.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum WorktreeRefusal {
@@ -2543,7 +2877,8 @@ pub enum WorktreeRefusal {
     DirectoryMissing = 2,
     /// A Session that is not ended is in the Worktree.
     ActiveSession = 3,
-    /// A process has its current directory in the Worktree.
+    /// A process has its current directory in the Worktree, or a build holds
+    /// a lock of its build output.
     ProcessRunning = 4,
     /// The Worktree has changes that are not committed.
     UncommittedChanges = 5,
@@ -2564,6 +2899,13 @@ pub enum WorktreeRefusal {
     /// The facts of the Worktree are not known: see
     /// `WorktreeInfo.facts_unavailable_reason`.
     FactsUnknown = 13,
+    /// The user marked the Worktree to keep (`WORKTREE_MARK_KEEP`).
+    Kept = 14,
+    /// The Worktree has no trash place: the parent directory of its directory
+    /// is not writable. Only a removal without the grace time applies.
+    NoTrashPlace = 15,
+    /// The Worktree is in the trash place of nomux.
+    InTrash = 16,
 }
 impl WorktreeRefusal {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -2586,6 +2928,9 @@ impl WorktreeRefusal {
             Self::OtherFileSystem => "WORKTREE_REFUSAL_OTHER_FILE_SYSTEM",
             Self::NotFinished => "WORKTREE_REFUSAL_NOT_FINISHED",
             Self::FactsUnknown => "WORKTREE_REFUSAL_FACTS_UNKNOWN",
+            Self::Kept => "WORKTREE_REFUSAL_KEPT",
+            Self::NoTrashPlace => "WORKTREE_REFUSAL_NO_TRASH_PLACE",
+            Self::InTrash => "WORKTREE_REFUSAL_IN_TRASH",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -2605,6 +2950,264 @@ impl WorktreeRefusal {
             "WORKTREE_REFUSAL_OTHER_FILE_SYSTEM" => Some(Self::OtherFileSystem),
             "WORKTREE_REFUSAL_NOT_FINISHED" => Some(Self::NotFinished),
             "WORKTREE_REFUSAL_FACTS_UNKNOWN" => Some(Self::FactsUnknown),
+            "WORKTREE_REFUSAL_KEPT" => Some(Self::Kept),
+            "WORKTREE_REFUSAL_NO_TRASH_PLACE" => Some(Self::NoTrashPlace),
+            "WORKTREE_REFUSAL_IN_TRASH" => Some(Self::InTrash),
+            _ => None,
+        }
+    }
+}
+/// A mark that the user set on a Worktree.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum WorktreeMark {
+    /// No mark.
+    Unspecified = 0,
+    /// The work in the Worktree is done: the Worktree is finished also when no
+    /// merge rule matches. The branch stays unless it is merged by the strict
+    /// rule.
+    Finished = 1,
+    /// Keep the Worktree: no clean moves it to the trash or removes its build
+    /// output.
+    Keep = 2,
+}
+impl WorktreeMark {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "WORKTREE_MARK_UNSPECIFIED",
+            Self::Finished => "WORKTREE_MARK_FINISHED",
+            Self::Keep => "WORKTREE_MARK_KEEP",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "WORKTREE_MARK_UNSPECIFIED" => Some(Self::Unspecified),
+            "WORKTREE_MARK_FINISHED" => Some(Self::Finished),
+            "WORKTREE_MARK_KEEP" => Some(Self::Keep),
+            _ => None,
+        }
+    }
+}
+/// What a clean removes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum WorktreeCleanAction {
+    /// Not an action. The daemon uses `WORKTREE_CLEAN_ACTION_FINISHED`.
+    Unspecified = 0,
+    /// The build output of each linked Worktree. The directory and the branch
+    /// of the Worktree stay.
+    BuildOutput = 1,
+    /// Each finished Worktree: its build output, then its directory to the
+    /// trash place. Also the records of git of the Worktrees whose directory
+    /// is missing.
+    Finished = 2,
+    /// The build output of each stale Worktree.
+    Stale = 3,
+    /// Only the records of git of the Worktrees whose directory is missing.
+    Prune = 4,
+}
+impl WorktreeCleanAction {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "WORKTREE_CLEAN_ACTION_UNSPECIFIED",
+            Self::BuildOutput => "WORKTREE_CLEAN_ACTION_BUILD_OUTPUT",
+            Self::Finished => "WORKTREE_CLEAN_ACTION_FINISHED",
+            Self::Stale => "WORKTREE_CLEAN_ACTION_STALE",
+            Self::Prune => "WORKTREE_CLEAN_ACTION_PRUNE",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "WORKTREE_CLEAN_ACTION_UNSPECIFIED" => Some(Self::Unspecified),
+            "WORKTREE_CLEAN_ACTION_BUILD_OUTPUT" => Some(Self::BuildOutput),
+            "WORKTREE_CLEAN_ACTION_FINISHED" => Some(Self::Finished),
+            "WORKTREE_CLEAN_ACTION_STALE" => Some(Self::Stale),
+            "WORKTREE_CLEAN_ACTION_PRUNE" => Some(Self::Prune),
+            _ => None,
+        }
+    }
+}
+/// One step of a plan.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum WorktreePlanStep {
+    /// Not a step. A client shows the item without a step.
+    Unspecified = 0,
+    /// Deletes one build output directory of the Worktree.
+    BuildOutput = 1,
+    /// Moves the directory of the Worktree to the trash place and locks it.
+    /// The daemon removes it at the end of the grace time.
+    Trash = 2,
+    /// Removes the Worktree now, without the grace time.
+    Delete = 3,
+    /// Removes the records of git of the Worktrees of a repository whose
+    /// directory is missing (`git worktree prune`).
+    Prune = 4,
+    /// A proposal: a directory that has the `.git` file of a record whose
+    /// directory is missing exists at `path`. `git worktree repair <path>`
+    /// links it again. A clean does not run this step, and the repository
+    /// gets no prune step.
+    Repair = 5,
+}
+impl WorktreePlanStep {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "WORKTREE_PLAN_STEP_UNSPECIFIED",
+            Self::BuildOutput => "WORKTREE_PLAN_STEP_BUILD_OUTPUT",
+            Self::Trash => "WORKTREE_PLAN_STEP_TRASH",
+            Self::Delete => "WORKTREE_PLAN_STEP_DELETE",
+            Self::Prune => "WORKTREE_PLAN_STEP_PRUNE",
+            Self::Repair => "WORKTREE_PLAN_STEP_REPAIR",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "WORKTREE_PLAN_STEP_UNSPECIFIED" => Some(Self::Unspecified),
+            "WORKTREE_PLAN_STEP_BUILD_OUTPUT" => Some(Self::BuildOutput),
+            "WORKTREE_PLAN_STEP_TRASH" => Some(Self::Trash),
+            "WORKTREE_PLAN_STEP_DELETE" => Some(Self::Delete),
+            "WORKTREE_PLAN_STEP_PRUNE" => Some(Self::Prune),
+            "WORKTREE_PLAN_STEP_REPAIR" => Some(Self::Repair),
+            _ => None,
+        }
+    }
+}
+/// The result of one item of a clean.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum WorktreeCleanOutcome {
+    /// Not a result.
+    Unspecified = 0,
+    /// The step ran.
+    Done = 1,
+    /// The step did not run: the facts of the Worktree changed after the plan.
+    Changed = 2,
+    /// The step did not run: the item has a refusal, or the git extension
+    /// refused it.
+    Refused = 3,
+    /// The step failed.
+    Failed = 4,
+}
+impl WorktreeCleanOutcome {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "WORKTREE_CLEAN_OUTCOME_UNSPECIFIED",
+            Self::Done => "WORKTREE_CLEAN_OUTCOME_DONE",
+            Self::Changed => "WORKTREE_CLEAN_OUTCOME_CHANGED",
+            Self::Refused => "WORKTREE_CLEAN_OUTCOME_REFUSED",
+            Self::Failed => "WORKTREE_CLEAN_OUTCOME_FAILED",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "WORKTREE_CLEAN_OUTCOME_UNSPECIFIED" => Some(Self::Unspecified),
+            "WORKTREE_CLEAN_OUTCOME_DONE" => Some(Self::Done),
+            "WORKTREE_CLEAN_OUTCOME_CHANGED" => Some(Self::Changed),
+            "WORKTREE_CLEAN_OUTCOME_REFUSED" => Some(Self::Refused),
+            "WORKTREE_CLEAN_OUTCOME_FAILED" => Some(Self::Failed),
+            _ => None,
+        }
+    }
+}
+/// What changed in a Worktree.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum WorktreeChange {
+    /// Not a change. A client ignores the event.
+    Unspecified = 0,
+    /// A build output directory was deleted.
+    BuildOutputRemoved = 1,
+    /// The directory moved to the trash place.
+    Trashed = 2,
+    /// The directory moved back from the trash place.
+    Restored = 3,
+    /// The Worktree was removed.
+    Removed = 4,
+    /// The records of git of Worktrees whose directory is missing were
+    /// removed.
+    Pruned = 5,
+    /// The mark of the Worktree changed.
+    Marked = 6,
+}
+impl WorktreeChange {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "WORKTREE_CHANGE_UNSPECIFIED",
+            Self::BuildOutputRemoved => "WORKTREE_CHANGE_BUILD_OUTPUT_REMOVED",
+            Self::Trashed => "WORKTREE_CHANGE_TRASHED",
+            Self::Restored => "WORKTREE_CHANGE_RESTORED",
+            Self::Removed => "WORKTREE_CHANGE_REMOVED",
+            Self::Pruned => "WORKTREE_CHANGE_PRUNED",
+            Self::Marked => "WORKTREE_CHANGE_MARKED",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "WORKTREE_CHANGE_UNSPECIFIED" => Some(Self::Unspecified),
+            "WORKTREE_CHANGE_BUILD_OUTPUT_REMOVED" => Some(Self::BuildOutputRemoved),
+            "WORKTREE_CHANGE_TRASHED" => Some(Self::Trashed),
+            "WORKTREE_CHANGE_RESTORED" => Some(Self::Restored),
+            "WORKTREE_CHANGE_REMOVED" => Some(Self::Removed),
+            "WORKTREE_CHANGE_PRUNED" => Some(Self::Pruned),
+            "WORKTREE_CHANGE_MARKED" => Some(Self::Marked),
+            _ => None,
+        }
+    }
+}
+/// The level of the free space of a file system.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum WorktreeDiskLevel {
+    /// The free space is above the warning level.
+    Unspecified = 0,
+    /// The free space is below the warning level.
+    Warning = 1,
+    /// The free space is below the critical level.
+    Critical = 2,
+}
+impl WorktreeDiskLevel {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "WORKTREE_DISK_LEVEL_UNSPECIFIED",
+            Self::Warning => "WORKTREE_DISK_LEVEL_WARNING",
+            Self::Critical => "WORKTREE_DISK_LEVEL_CRITICAL",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "WORKTREE_DISK_LEVEL_UNSPECIFIED" => Some(Self::Unspecified),
+            "WORKTREE_DISK_LEVEL_WARNING" => Some(Self::Warning),
+            "WORKTREE_DISK_LEVEL_CRITICAL" => Some(Self::Critical),
             _ => None,
         }
     }
@@ -2632,7 +3235,7 @@ pub struct Request {
     /// number plan at the top of this file.
     #[prost(
         oneof = "request::Body",
-        tags = "100, 200, 201, 300, 301, 302, 303, 304, 305, 306, 307, 308, 309, 310, 311, 312, 313, 400, 401, 402, 403, 404, 405, 500, 501, 502, 600, 700, 701, 702, 800, 801, 802, 803, 804, 805, 806, 900"
+        tags = "100, 200, 201, 300, 301, 302, 303, 304, 305, 306, 307, 308, 309, 310, 311, 312, 313, 400, 401, 402, 403, 404, 405, 500, 501, 502, 600, 700, 701, 702, 800, 801, 802, 803, 804, 805, 806, 900, 901, 902, 903, 904, 905, 906"
     )]
     pub body: ::core::option::Option<request::Body>,
 }
@@ -2756,6 +3359,24 @@ pub mod request {
         /// Worktree.List.
         #[prost(message, tag = "900")]
         WorktreeList(super::WorktreeListRequest),
+        /// Worktree.Plan.
+        #[prost(message, tag = "901")]
+        WorktreePlan(super::WorktreePlanRequest),
+        /// Worktree.Clean.
+        #[prost(message, tag = "902")]
+        WorktreeClean(super::WorktreeCleanRequest),
+        /// Worktree.Mark.
+        #[prost(message, tag = "903")]
+        WorktreeMark(super::WorktreeMarkRequest),
+        /// Worktree.Trash.
+        #[prost(message, tag = "904")]
+        WorktreeTrash(super::WorktreeTrashRequest),
+        /// Worktree.Restore.
+        #[prost(message, tag = "905")]
+        WorktreeRestore(super::WorktreeRestoreRequest),
+        /// Worktree.EmptyTrash.
+        #[prost(message, tag = "906")]
+        WorktreeEmptyTrash(super::WorktreeEmptyTrashRequest),
     }
 }
 /// The response from the daemon to one request.
@@ -2768,7 +3389,7 @@ pub struct Response {
     /// the field number plan at the top of this file.
     #[prost(
         oneof = "response::Result",
-        tags = "2, 100, 200, 201, 300, 301, 302, 303, 304, 305, 306, 307, 308, 309, 310, 311, 312, 313, 400, 401, 402, 403, 404, 405, 500, 501, 502, 600, 700, 701, 702, 800, 801, 802, 803, 804, 805, 806, 900"
+        tags = "2, 100, 200, 201, 300, 301, 302, 303, 304, 305, 306, 307, 308, 309, 310, 311, 312, 313, 400, 401, 402, 403, 404, 405, 500, 501, 502, 600, 700, 701, 702, 800, 801, 802, 803, 804, 805, 806, 900, 901, 902, 903, 904, 905, 906"
     )]
     pub result: ::core::option::Option<response::Result>,
 }
@@ -2897,6 +3518,24 @@ pub mod response {
         /// Worktree.List.
         #[prost(message, tag = "900")]
         WorktreeList(super::WorktreeListResponse),
+        /// Worktree.Plan.
+        #[prost(message, tag = "901")]
+        WorktreePlan(super::WorktreePlanResponse),
+        /// Worktree.Clean.
+        #[prost(message, tag = "902")]
+        WorktreeClean(super::WorktreeCleanResponse),
+        /// Worktree.Mark.
+        #[prost(message, tag = "903")]
+        WorktreeMark(super::WorktreeMarkResponse),
+        /// Worktree.Trash.
+        #[prost(message, tag = "904")]
+        WorktreeTrash(super::WorktreeTrashResponse),
+        /// Worktree.Restore.
+        #[prost(message, tag = "905")]
+        WorktreeRestore(super::WorktreeRestoreResponse),
+        /// Worktree.EmptyTrash.
+        #[prost(message, tag = "906")]
+        WorktreeEmptyTrash(super::WorktreeEmptyTrashResponse),
     }
 }
 /// A message from the daemon that no request asked for. The daemon sends
@@ -2914,7 +3553,10 @@ pub struct Event {
     /// What occurred. A client ignores an event whose body it does not know.
     /// Each service adds its events here, with numbers of its block of the
     /// field number plan at the top of this file.
-    #[prost(oneof = "event::Body", tags = "300, 301, 302, 303, 400, 500, 501, 600, 800")]
+    #[prost(
+        oneof = "event::Body",
+        tags = "300, 301, 302, 303, 400, 500, 501, 600, 800, 900, 901"
+    )]
     pub body: ::core::option::Option<event::Body>,
 }
 /// Nested message and enum types in `Event`.
@@ -2952,6 +3594,14 @@ pub mod event {
         /// Workspace: the workspace tree changed.
         #[prost(message, tag = "800")]
         WorkspaceChanged(super::WorkspaceChanged),
+        /// Worktree: a clean, a restore, the end of a grace time or a mark
+        /// changed a Worktree.
+        #[prost(message, tag = "900")]
+        WorktreeChanged(super::WorktreeChanged),
+        /// Worktree: the free space of a file system with Worktrees went to a
+        /// different level.
+        #[prost(message, tag = "901")]
+        WorktreeDiskPressure(super::WorktreeDiskPressure),
     }
 }
 /// One message on the control channel.
@@ -3034,6 +3684,10 @@ pub struct WorktreeFactsRequest {
     /// Project.
     #[prost(string, tag = "1")]
     pub repository: ::prost::alloc::string::String,
+    /// The base branch that the user set, as a short name: for example
+    /// `origin/main` or `main`. Empty: the extension finds the base branch.
+    #[prost(string, tag = "2")]
+    pub base_branch: ::prost::alloc::string::String,
 }
 /// The result of the method `worktree_facts`.
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -3123,4 +3777,133 @@ pub struct WorktreeFacts {
     /// True when the worktree has more ignored paths than `ignored_paths`.
     #[prost(bool, tag = "18")]
     pub ignored_paths_truncated: bool,
+}
+/// The argument of the method `worktree_move_to_trash`: moves the directory
+/// of a linked worktree to the trash place and locks it.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct WorktreeMoveToTrashRequest {
+    /// The absolute path of a worktree of the repository: the directory of a
+    /// Project.
+    #[prost(string, tag = "1")]
+    pub repository: ::prost::alloc::string::String,
+    /// The absolute path of the directory of the linked worktree.
+    #[prost(string, tag = "2")]
+    pub path: ::prost::alloc::string::String,
+    /// The absolute path in the trash place. Its parent directory exists, and
+    /// the path does not.
+    #[prost(string, tag = "3")]
+    pub trash_path: ::prost::alloc::string::String,
+    /// The commit of `HEAD` that the plan saw. The extension refuses the move
+    /// when `HEAD` is different.
+    #[prost(string, tag = "4")]
+    pub expected_head: ::prost::alloc::string::String,
+    /// The ignored paths that may go with the directory, relative to it: the
+    /// build output that the daemon did not delete, and, with
+    /// `include_ignored`, the files of the user.
+    #[prost(string, repeated, tag = "5")]
+    pub allowed_ignored_paths: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Move also when `HEAD` has commits that are not pushed.
+    #[prost(bool, tag = "6")]
+    pub allow_unpushed: bool,
+    /// The base branch that the user set. Empty: the extension finds it.
+    #[prost(string, tag = "7")]
+    pub base_branch: ::prost::alloc::string::String,
+}
+/// The result of the method `worktree_move_to_trash`.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct WorktreeMoveToTrashResponse {
+    /// Why the extension did not move the worktree. Empty when it moved and
+    /// locked it.
+    #[prost(enumeration = "WorktreeRefusal", repeated, tag = "1")]
+    pub refusals: ::prost::alloc::vec::Vec<i32>,
+    /// The refusals as English text for the user.
+    #[prost(string, tag = "2")]
+    pub message: ::prost::alloc::string::String,
+}
+/// The argument of the method `worktree_move_from_trash`: unlocks a worktree
+/// in the trash place and moves it back.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct WorktreeMoveFromTrashRequest {
+    /// The absolute path of a worktree of the repository.
+    #[prost(string, tag = "1")]
+    pub repository: ::prost::alloc::string::String,
+    /// The absolute path of the directory in the trash place.
+    #[prost(string, tag = "2")]
+    pub trash_path: ::prost::alloc::string::String,
+    /// The absolute path to move the directory to. It does not exist.
+    #[prost(string, tag = "3")]
+    pub path: ::prost::alloc::string::String,
+}
+/// The result of the method `worktree_move_from_trash`.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct WorktreeMoveFromTrashResponse {}
+/// The argument of the method `worktree_delete`: removes a linked worktree
+/// and, if asked, its branch.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct WorktreeDeleteRequest {
+    /// The absolute path of a worktree of the repository.
+    #[prost(string, tag = "1")]
+    pub repository: ::prost::alloc::string::String,
+    /// The absolute path of the directory of the linked worktree: in the trash
+    /// place, or, without the grace time, the directory of the worktree.
+    #[prost(string, tag = "2")]
+    pub path: ::prost::alloc::string::String,
+    /// The commit of `HEAD` that the plan saw. The extension refuses the
+    /// removal when `HEAD` is different.
+    #[prost(string, tag = "3")]
+    pub expected_head: ::prost::alloc::string::String,
+    /// The ignored paths that the removal may delete, relative to the
+    /// directory.
+    #[prost(string, repeated, tag = "4")]
+    pub allowed_ignored_paths: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Remove also when `HEAD` has commits that are not pushed.
+    #[prost(bool, tag = "5")]
+    pub allow_unpushed: bool,
+    /// After the removal, delete the branch if it is merged by the strict rule
+    /// and its tip is `expected_head`.
+    #[prost(bool, tag = "6")]
+    pub delete_branch: bool,
+    /// The base branch that the user set. Empty: the extension finds it.
+    #[prost(string, tag = "7")]
+    pub base_branch: ::prost::alloc::string::String,
+}
+/// The result of the method `worktree_delete`.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct WorktreeDeleteResponse {
+    /// Why the extension did not remove the worktree. Empty when it removed
+    /// it.
+    #[prost(enumeration = "WorktreeRefusal", repeated, tag = "1")]
+    pub refusals: ::prost::alloc::vec::Vec<i32>,
+    /// The refusals as English text for the user.
+    #[prost(string, tag = "2")]
+    pub message: ::prost::alloc::string::String,
+    /// True when the branch was deleted.
+    #[prost(bool, tag = "3")]
+    pub branch_deleted: bool,
+    /// Why the branch stays when `delete_branch` was set, as English text.
+    #[prost(string, tag = "4")]
+    pub branch_kept_reason: ::prost::alloc::string::String,
+}
+/// The argument of the method `worktree_prune`: removes the records of git of
+/// the linked worktrees whose directory is missing.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct WorktreePruneRequest {
+    /// The absolute path of a worktree of the repository.
+    #[prost(string, tag = "1")]
+    pub repository: ::prost::alloc::string::String,
+    /// The absolute paths of the records that the plan saw. The extension
+    /// refuses the prune when the records to prune are different.
+    #[prost(string, repeated, tag = "2")]
+    pub paths: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
+/// The result of the method `worktree_prune`.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct WorktreePruneResponse {
+    /// The paths of the records that git removed.
+    #[prost(string, repeated, tag = "1")]
+    pub pruned: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Why the extension pruned nothing, as English text. Empty when it
+    /// pruned.
+    #[prost(string, tag = "2")]
+    pub refusal: ::prost::alloc::string::String,
 }

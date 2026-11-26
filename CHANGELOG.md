@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [git-cliff](https://git-cliff.org) writes this file from the commit subjects.
 To see the changes that are not in a version, run `git cliff --unreleased`.
 
+## [0.10.0] - 2026-11-26
+
+### Added
+
+- Give a session its working directory with resolved links
 ## [0.9.0] - 2026-11-26
 
 ### Added

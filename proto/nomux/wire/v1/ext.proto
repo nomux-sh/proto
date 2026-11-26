@@ -197,3 +197,15 @@ message ExtCallResponse {
     ExtCallError error = 2;
   }
 }
+
+// Event: the daemon part of an extension sent an event.
+message ExtensionEvent {
+  // The identifier of the extension. Two extensions can send events with
+  // the same name.
+  string extension_id = 1;
+  // The name that the extension gave to the event.
+  string name = 2;
+  // The payload. The extension selects its encoding. 65536 bytes at most:
+  // the daemon drops a larger event.
+  bytes payload = 3;
+}

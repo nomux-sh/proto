@@ -3,8 +3,10 @@
 //! This crate has four parts:
 //!
 //! - [`wire::v1`]: the control messages: the envelope, the handshake, the
-//!   Host service, the Session service and the Ext service. `prost`
-//!   generates these types from the schemas in `proto/nomux/wire/v1/`.
+//!   Host service, the Session service, the Ext service, the Agent service,
+//!   the Events service and the Hooks service, and the payloads of the
+//!   adapter extensions. `prost` generates these types from the schemas in
+//!   `proto/nomux/wire/v1/`.
 //! - [`frame`]: the fixed binary header of a terminal data frame and the
 //!   payload of the `End` frame.
 //! - [`compatibility`]: the control protocol version and the version rule of
@@ -74,6 +76,27 @@ pub mod wire {
                     .field("token", &token)
                     .field("state", &self.state)
                     .field("message", &self.message)
+                    .finish()
+            }
+        }
+
+        /// `HookEventRequest` contains the token of a Session, which is a
+        /// secret. This implementation prints all fields but replaces the
+        /// token, and prints the length of the payload.
+        impl core::fmt::Debug for HookEventRequest {
+            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                let token = if self.token.is_empty() {
+                    "<empty>"
+                } else {
+                    "<redacted>"
+                };
+                f.debug_struct("HookEventRequest")
+                    .field("session_id", &self.session_id)
+                    .field("token", &token)
+                    .field("tool", &self.tool)
+                    .field("event", &self.event)
+                    .field("payload_length", &self.payload.len())
+                    .field("payload_omitted", &self.payload_omitted)
                     .finish()
             }
         }

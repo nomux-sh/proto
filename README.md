@@ -11,7 +11,7 @@ In development. Versions earlier than 1.0.0 are pre-releases: interfaces can cha
 The repository has these parts now:
 
 - The handshake messages (`Hello`, `Welcome`) and the envelope messages (`Envelope`, `Request`, `Response`, `Event`, `Error`) of the control protocol.
-- The Host service (`Info`, `Stop`), the Session service (`Create`, `List`, `Kill`, `Attach`, `Detach`, `Input`, `Resize`, `Start`, `Capture`, `SetRestorePolicy`, `Memory`), the Ext service (`List`, `Inspect`, `Install`, `Remove`, `SetEnabled`, `Call`), the Agent service (`Tree`, `Explain`, `SetStatus`) and the Events service (`Subscribe`) of the control protocol.
+- The Host service (`Info`, `Stop`), the Session service (`Create`, `List`, `Kill`, `Attach`, `Detach`, `Input`, `Resize`, `Start`, `Capture`, `SetRestorePolicy`, `Memory`), the Ext service (`List`, `Inspect`, `Install`, `Remove`, `SetEnabled`, `Call`), the Agent service (`Tree`, `Explain`, `SetStatus`), the Events service (`Subscribe`) and the Hooks service (`Event`, `Plan`, `Adapters`) of the control protocol, and the payloads between the daemon and an adapter extension.
 - The codec for the header of a terminal data frame and for the payload of the `End` frame.
 - The names of the capability flags that are `active`.
 - The version rule: how a client and a daemon select a control protocol version.
@@ -34,8 +34,11 @@ proto/nomux/wire/v1/         protobuf schemas, package nomux.wire.v1
   ext.proto                  Ext service: List, Inspect, Install, Remove, SetEnabled, Call
   agent.proto                Agent service: Tree, Explain, SetStatus, and its events
   events.proto               Events service: Subscribe
+  hooks.proto                Hooks service: Event, Plan, Adapters
+  adapter.proto              Payloads between the daemon and an adapter extension
 spec/
   control.md                 control channel: framing, error codes, services and their messages
+  adapter.md                 payloads between the daemon and an adapter extension
   frame.md                   terminal frames (binary, not protobuf): header, payloads, terminal data path
   holder.md                  holder protocol: versioning rule, open questions
   capabilities.md            capability flag registry

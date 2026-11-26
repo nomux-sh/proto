@@ -52,6 +52,7 @@ Each service has its own block of 100 field numbers in `Request.body` and in `Re
 | Ext | 400 to 499 | `ext.proto` |
 | Agent | 500 to 599 | `agent.proto` |
 | Events | 600 to 699 | `events.proto` |
+| Hooks | 700 to 799 | `hooks.proto` |
 
 An event of a service has a field number of the block of that service in `Event.body`.
 
@@ -286,13 +287,15 @@ Each part of an `AgentStatus` has its source: the state with its kind, the messa
 |------:|------|-----------------------|
 | 0 | `STATUS_SOURCE_UNSPECIFIED` | The daemon did not set the field. |
 | 1 | `STATUS_SOURCE_NONE` | No source. The state is `AGENT_STATE_IDLE`. |
+| 10 | `STATUS_SOURCE_ADAPTER` | An adapter extension, from the events of the agent tool: [adapter.md](adapter.md). |
 | 20 | `STATUS_SOURCE_PROGRAM_STATUS` | A report of a program in the terminal stream of the Session: the Program Status Protocol (OSC 7501). |
 | 30 | `STATUS_SOURCE_SELF_REPORT` | `Agent.SetStatus`. |
 | 40 | `STATUS_SOURCE_SESSION_RESTORE` | The Session lost its process while work ran or waited for the user. The daemon shows that work as `AGENT_STATE_DONE`. |
 | 50 | `STATUS_SOURCE_PROMPT_MARKS` | A guess from the prompt marks of the shell (OSC 133). |
 | 60 | `STATUS_SOURCE_FOREGROUND_PROGRAM` | A guess from the foreground process group of the terminal of the Session. |
 
-- The sources decide in the sequence of their values from 20 on: the first source that reports a state gives the state and the kind. The values have room between them, because a later version adds sources, for example the events of an agent tool.
+- The sources decide in the sequence of their values from 10 on: the first source that reports a state gives the state and the kind. The values have room between them, because a later version adds sources.
+- One exception: a soft `AGENT_STATE_WORKING` of the adapter does not decide when a later source reports `AGENT_STATE_NEEDS_YOU` for the same item. The later source decides then. The title and the tool name of the adapter still count. [adapter.md](adapter.md) says when a state is soft.
 - A text or the progress comes from the first source that has it and that reports the same state as the source of the state. A text of a source that reports a different state is not shown: it describes a different state.
 - A message has 512 bytes at most. The daemon cuts a longer message of a program at the end of a character.
 - A client treats a source that it does not know as a source without a name. It does not treat it as a guess or as a report.
@@ -304,6 +307,10 @@ A `ChildWork` is a subagent, a teammate or a background task below an Agent run 
 
 - `status` is the status of the Child work. It is absent if no source reports the Child work and it is in the tree only because a Child work below it has a status.
 - `children` are in the sequence of their names.
+
+#### Details
+
+`AgentRun.details` has what an adapter says about the Agent run beyond its status: the model, the identifier of the session of the agent tool and a command that continues that session. It is absent if no adapter gave details. The source is always `STATUS_SOURCE_ADAPTER`.
 
 #### Aggregation
 
@@ -367,12 +374,39 @@ The Events service gives a client the changes on a Host as a stream of `Event` m
 | Field number in `Event.body` | Event | Type for the filter | Meaning |
 |-----------------------------:|-------|---------------------|---------|
 | 500 | `AgentRunChanged` | `EVENT_TYPE_AGENT_RUN_CHANGED` | A part of the status of a Session or of its Child work changed. The event has the Agent run after the change. |
+| 400 | `ExtensionEvent` | `EVENT_TYPE_EXTENSION_EVENT` | The daemon part of an extension sent an event. The daemon drops an event whose payload is larger than 65536 bytes. |
 | 501 | `AgentRunRemoved` | `EVENT_TYPE_AGENT_RUN_REMOVED` | The Session ended or was removed. |
 | 600 | `EventsSnapshot` | none | The state of the Host follows. |
 
 A client ignores an event whose body it does not know.
 
 The daemon does not make an event for a change that only the source `STATUS_SOURCE_FOREGROUND_PROGRAM` sees: the operating system does not tell the daemon when the foreground process group of a terminal changes. The daemon reads that source for `Agent.Tree` and `Agent.Explain`, and when a different source changes.
+
+### Hooks
+
+The Hooks service takes the hook events of agent tools and gives the clients what they need to install the hooks of a tool. [adapter.md](adapter.md) specifies the adapter extensions that take the events.
+
+| Field number | Method | Request | Response | Function |
+|-------------:|--------|---------|----------|----------|
+| 700 | `Hooks.Event` | `HookEventRequest` | `HookEventResponse` | A hook of an agent tool in a Session sends one event of the tool. |
+| 701 | `Hooks.Plan` | `HooksPlanRequest` | `HooksPlanResponse` | Gives the change that the hooks of a tool need in its settings file, as the adapter of the tool describes it. |
+| 702 | `Hooks.Adapters` | `HooksAdaptersRequest` | `HooksAdaptersResponse` | Gives each tool that has an adapter, and its adapter. |
+
+- `nomux hook <tool> <event>` sends `Hooks.Event`. It takes the Session, the socket and the token from `NOMUX_SESSION_ID`, `NOMUX_SOCK` and `NOMUX_TOKEN`, as `Agent.SetStatus` does. The token rules of the self-report apply.
+- The daemon answers `Hooks.Event` at once and gives the event to the adapter of the tool later, in the sequence of arrival. It keeps 256 events or 4 MiB of payload at most that the adapter did not take; it drops an event over the limit. An event of a tool without an adapter is dropped. The response is the same in these cases: a hook must not depend on the adapter.
+- `HookEventResponse.output` is what the hook writes to its standard output. It is empty in this version. A later version fills it for an event that waits for a decision.
+- A hook must never block the tool. A client that does not get the response in its own time limit ends without an output.
+- `Hooks.Plan` calls the method `hooks.plan` of the adapter. The daemon does not read or write a settings file: the client computes the change, shows it and writes it on the computer of the tool.
+
+Errors of the Hooks service:
+
+| Request | Condition | Code |
+|---------|-----------|------|
+| `HookEventRequest` | The tool or the event is not a valid name, or the payload is larger than 262144 bytes. | `ERROR_CODE_FAILED` |
+| `HookEventRequest` | No Session that is not ended has the identifier. | `ERROR_CODE_NOT_FOUND` |
+| `HookEventRequest` | The token is empty or is not the token of the Session, or the daemon has no token of the Session. | `ERROR_CODE_PERMISSION_DENIED` |
+| `HooksPlanRequest` | No tool with this name has an adapter. | `ERROR_CODE_NOT_FOUND` |
+| `HooksPlanRequest` | The adapter did not answer, answered with an error, or answered with a payload that is not a `HookInstallPlan`. | `ERROR_CODE_FAILED`, or `ERROR_CODE_TIMEOUT` if it did not answer in time |
 
 ## Open items
 
@@ -383,6 +417,7 @@ These items are not decided. The [roadmap](https://github.com/nomux-sh/docs/blob
 - A request that removes an ended Session before its retention time is over, and a request that starts the command of an ended Session again.
 - The name of the environment profile of a Session.
 - The other services: Project, Worktree, Team and Task.
-- Agent: the events of an agent tool as a source, more than one Agent run in a Session, the kind of a Child work (subagent, teammate, background task), and a self-report for a Child work.
+- Agent: more than one Agent run in a Session, the kind of a Child work (subagent, teammate, background task), and a self-report for a Child work.
 - Events: a request that marks a Session as seen without an attach, the events of the other services, and an event log that stays after a restart of the daemon.
-- Ext: the installation of an extension from a registry, the update of an extension, and the events of the extensions.
+- Ext: the installation of an extension from a registry, the update of an extension, and events from the daemon to an extension.
+- Hooks: an answer of a hook with a decision of the user, and settings files that are not JSON.

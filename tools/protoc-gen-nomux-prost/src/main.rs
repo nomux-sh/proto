@@ -46,12 +46,13 @@ fn generate(request: CodeGeneratorRequest) -> io::Result<Vec<File>> {
     };
     prost_build::Config::new()
         .out_dir(out_dir.path())
-        // `Hello` contains the device token, and `AgentSetStatusRequest`
-        // contains the token of a Session. `nomux-proto` implements `Debug`
-        // for the two by hand and does not print the token.
+        // `Hello` contains the device token, and `AgentSetStatusRequest` and
+        // `HookEventRequest` contain the token of a Session. `nomux-proto`
+        // implements `Debug` for them by hand and does not print the token.
         .skip_debug([
             ".nomux.wire.v1.Hello",
             ".nomux.wire.v1.AgentSetStatusRequest",
+            ".nomux.wire.v1.HookEventRequest",
         ])
         // A message with an Agent run or with a status is much larger than
         // the other messages of its oneof.

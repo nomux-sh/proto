@@ -11,7 +11,7 @@ In development. Versions earlier than 1.0.0 are pre-releases: interfaces can cha
 The repository has these parts now:
 
 - The handshake messages (`Hello`, `Welcome`) and the envelope messages (`Envelope`, `Request`, `Response`, `Event`, `Error`) of the control protocol.
-- The Host service (`Info`, `Stop`), the Session service (`Create`, `List`, `Kill`, `Attach`, `Detach`, `Input`, `Resize`, `Start`, `Capture`, `SetRestorePolicy`, `Memory`), the Ext service (`List`, `Inspect`, `Install`, `Remove`, `SetEnabled`, `Call`), the Agent service (`Tree`, `Explain`, `SetStatus`), the Events service (`Subscribe`), the Hooks service (`Event`, `Plan`, `Adapters`) and the Workspace service (`Tree`, `AddProject`, `RemoveProject`, `CreateGroup`, `RemoveGroup`, `Rename`, `Move`) of the control protocol, and the payloads between the daemon and an adapter extension.
+- The Host service (`Info`, `Stop`), the Session service (`Create`, `List`, `Kill`, `Attach`, `Detach`, `Input`, `Resize`, `Start`, `Capture`, `SetRestorePolicy`, `Memory`), the Ext service (`List`, `Inspect`, `Install`, `Remove`, `SetEnabled`, `Call`), the Agent service (`Tree`, `Explain`, `SetStatus`), the Events service (`Subscribe`), the Hooks service (`Event`, `Plan`, `Adapters`) the Workspace service (`Tree`, `AddProject`, `RemoveProject`, `CreateGroup`, `RemoveGroup`, `Rename`, `Move`) and the Worktree service (`List`) of the control protocol, the payloads between the daemon and an adapter extension, and the payloads between the daemon and the git extension.
 - The codec for the header of a terminal data frame and for the payload of the `End` frame.
 - The names of the capability flags that are `active`.
 - The version rule: how a client and a daemon select a control protocol version.
@@ -37,11 +37,14 @@ proto/nomux/wire/v1/         protobuf schemas, package nomux.wire.v1
   hooks.proto                Hooks service: Event, Plan, Adapters
   workspace.proto            Workspace service: Tree, AddProject, RemoveProject, CreateGroup,
                              RemoveGroup, Rename, Move, and its event
+  worktree.proto             Worktree service: List
   adapter.proto              Payloads between the daemon and an adapter extension
+  worktree_facts.proto       Payloads between the daemon and the git extension
 spec/
   control.md                 control channel: framing, error codes, services and their messages
   adapter.md                 payloads between the daemon and an adapter extension
   workspace.md               workspace tree: Groups and Projects, revision, limits, examples
+  worktree.md                Worktrees: states, flags, merge rules, refusals, sizes, the git facts
   frame.md                   terminal frames (binary, not protobuf): header, payloads, terminal data path
   holder.md                  holder protocol: versioning rule, open questions
   capabilities.md            capability flag registry

@@ -2214,6 +2214,401 @@ pub mod workspace_changed {
         Removed(super::WorkspaceNodeRemoved),
     }
 }
+/// The size of a Worktree as the daemon measured it.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct WorktreeSize {
+    /// The allocated bytes of each file and directory below the directory of
+    /// the Worktree. A hard link counts one time in a walk of a Project. A
+    /// nested Worktree is not in the sum: it has its own size.
+    #[prost(uint64, tag = "1")]
+    pub total_bytes: u64,
+    /// The part of `total_bytes` in build output directories.
+    #[prost(uint64, tag = "2")]
+    pub build_output_bytes: u64,
+    /// When the walk ended: milliseconds after the Unix epoch.
+    #[prost(uint64, tag = "3")]
+    pub measured_at_ms: u64,
+    /// True when the size is older than the size lifetime, or an event made it
+    /// old. The daemon measures it again: `WorktreeListRequest.wait_for_sizes`.
+    #[prost(bool, tag = "4")]
+    pub is_old: bool,
+    /// Each build output directory of the Worktree with its size, the largest
+    /// first. Their sum is `build_output_bytes`.
+    #[prost(message, repeated, tag = "5")]
+    pub build_outputs: ::prost::alloc::vec::Vec<BuildOutputSize>,
+}
+/// The size of one build output directory of a Worktree.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct BuildOutputSize {
+    /// The path of the directory, relative to the directory of the Worktree.
+    #[prost(string, tag = "1")]
+    pub path: ::prost::alloc::string::String,
+    /// The identifier of the build-output rule that accepted the directory,
+    /// for example `cargo-target` or `node-modules`. The rules are data of the
+    /// daemon: a client that does not know an identifier shows it as it is.
+    #[prost(string, tag = "2")]
+    pub rule: ::prost::alloc::string::String,
+    /// The allocated bytes below the directory, counted as for
+    /// `WorktreeSize.total_bytes`.
+    #[prost(uint64, tag = "3")]
+    pub bytes: u64,
+}
+/// One Worktree of a Project.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct WorktreeInfo {
+    /// The absolute path of the directory of the Worktree, with its symbolic
+    /// links resolved.
+    #[prost(string, tag = "1")]
+    pub path: ::prost::alloc::string::String,
+    /// The short name of the branch. Empty when `HEAD` is detached, and for a
+    /// bare repository.
+    #[prost(string, tag = "2")]
+    pub branch: ::prost::alloc::string::String,
+    /// The commit of `HEAD` as a hexadecimal object ID. Empty for a bare
+    /// repository and before the first commit.
+    #[prost(string, tag = "3")]
+    pub head: ::prost::alloc::string::String,
+    /// True for the main worktree of the repository.
+    #[prost(bool, tag = "4")]
+    pub is_main: bool,
+    /// True for the entry of a bare repository. It has no directory to
+    /// measure and is never removed.
+    #[prost(bool, tag = "5")]
+    pub is_bare: bool,
+    /// The state.
+    #[prost(enumeration = "WorktreeState", tag = "6")]
+    pub state: i32,
+    /// The flags, each one time, in the sequence of their values.
+    #[prost(enumeration = "WorktreeFlag", repeated, tag = "7")]
+    pub flags: ::prost::alloc::vec::Vec<i32>,
+    /// The identifiers of the Sessions that are not ended whose working
+    /// directory is in the Worktree. A Session belongs to the Worktree with the
+    /// longest directory that contains its working directory.
+    #[prost(string, repeated, tag = "8")]
+    pub session_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// The size. Absent when the daemon did not measure the Worktree yet.
+    #[prost(message, optional, tag = "9")]
+    pub size: ::core::option::Option<WorktreeSize>,
+    /// The last activity in the Worktree: the newest change of its `HEAD`, its
+    /// index and its log of `HEAD`. Milliseconds after the Unix epoch. 0 when
+    /// not known.
+    #[prost(uint64, tag = "10")]
+    pub last_activity_at_ms: u64,
+    /// The rule that found the branch merged.
+    #[prost(enumeration = "WorktreeMergedBy", tag = "11")]
+    pub merged_by: i32,
+    /// The number of commits that are not pushed (`WORKTREE_FLAG_UNPUSHED`).
+    /// The count stops at 1000.
+    #[prost(uint32, tag = "12")]
+    pub unpushed_commits: u32,
+    /// Why a removal of the directory is refused, the most important reason
+    /// first. Empty when a removal is allowed: the Worktree is finished and a
+    /// removal loses no work.
+    #[prost(enumeration = "WorktreeRefusal", repeated, tag = "13")]
+    pub refusals: ::prost::alloc::vec::Vec<i32>,
+    /// The ignored paths that are not build output, relative to the directory
+    /// of the Worktree. A directory ends with `/`. 32 paths at most.
+    #[prost(string, repeated, tag = "14")]
+    pub ignored_user_paths: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// The reason of the lock. Empty when the Worktree is not locked, or when
+    /// the lock has no reason.
+    #[prost(string, tag = "15")]
+    pub locked_reason: ::prost::alloc::string::String,
+    /// Why the daemon does not know the git facts of this Worktree, as English
+    /// text for the user. Empty when it knows them.
+    #[prost(string, tag = "16")]
+    pub facts_unavailable_reason: ::prost::alloc::string::String,
+}
+/// The Worktrees of one Project.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ProjectWorktrees {
+    /// The identifier of the Project.
+    #[prost(string, tag = "1")]
+    pub project_id: ::prost::alloc::string::String,
+    /// Why the daemon has no Worktree of the Project, as English text for the
+    /// user: for example the git extension is not installed, or its approved
+    /// directories do not contain the directory of the Project. Empty when the
+    /// daemon has the Worktrees.
+    #[prost(string, tag = "2")]
+    pub unavailable_reason: ::prost::alloc::string::String,
+    /// The base branch of the merge rules, for example `origin/main`. Empty
+    /// when the repository has no base branch.
+    #[prost(string, tag = "3")]
+    pub base_branch: ::prost::alloc::string::String,
+    /// The time of the last fetch of the repository: milliseconds after the
+    /// Unix epoch. 0 when the repository was never fetched. nomux never
+    /// fetches.
+    #[prost(uint64, tag = "4")]
+    pub last_fetch_at_ms: u64,
+    /// The free bytes of the file system of the directory of the Project for a
+    /// user without special rights. 0 when not known.
+    #[prost(uint64, tag = "5")]
+    pub free_bytes: u64,
+    /// The size of that file system in bytes. 0 when not known.
+    #[prost(uint64, tag = "6")]
+    pub file_system_bytes: u64,
+    /// The main worktree first, then the linked Worktrees.
+    #[prost(message, repeated, tag = "7")]
+    pub worktrees: ::prost::alloc::vec::Vec<WorktreeInfo>,
+}
+/// Worktree.List: asks for the Worktrees of one Project or of each Project.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct WorktreeListRequest {
+    /// The identifier of a Project. Empty for each Project of the workspace
+    /// tree.
+    #[prost(string, tag = "1")]
+    pub project_id: ::prost::alloc::string::String,
+    /// True: the daemon measures each size that is absent or old before it
+    /// answers. False: the response has the sizes that the daemon has, and the
+    /// daemon measures the absent and old sizes after the response.
+    #[prost(bool, tag = "2")]
+    pub wait_for_sizes: bool,
+}
+/// The reply to `WorktreeListRequest`.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct WorktreeListResponse {
+    /// The Projects in the sequence of the workspace tree.
+    #[prost(message, repeated, tag = "1")]
+    pub projects: ::prost::alloc::vec::Vec<ProjectWorktrees>,
+}
+/// The state of a Worktree. A Worktree has one state.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum WorktreeState {
+    /// Not a state. A client shows the Worktree without a state.
+    Unspecified = 0,
+    /// A Session that is not ended has its working directory in the Worktree.
+    Active = 1,
+    /// Not active, and the branch of the Worktree is merged into the base
+    /// branch: see `WorktreeMergedBy`.
+    Finished = 2,
+    /// Not active, not finished, and no activity for the stale time.
+    Stale = 3,
+    /// Each other Worktree.
+    Idle = 4,
+}
+impl WorktreeState {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "WORKTREE_STATE_UNSPECIFIED",
+            Self::Active => "WORKTREE_STATE_ACTIVE",
+            Self::Finished => "WORKTREE_STATE_FINISHED",
+            Self::Stale => "WORKTREE_STATE_STALE",
+            Self::Idle => "WORKTREE_STATE_IDLE",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "WORKTREE_STATE_UNSPECIFIED" => Some(Self::Unspecified),
+            "WORKTREE_STATE_ACTIVE" => Some(Self::Active),
+            "WORKTREE_STATE_FINISHED" => Some(Self::Finished),
+            "WORKTREE_STATE_STALE" => Some(Self::Stale),
+            "WORKTREE_STATE_IDLE" => Some(Self::Idle),
+            _ => None,
+        }
+    }
+}
+/// A fact of a Worktree. The flags are independent of the state.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum WorktreeFlag {
+    /// Not a flag. A client ignores it.
+    Unspecified = 0,
+    /// The Worktree has a staged, unstaged or untracked file that is not
+    /// ignored, a conflict, or a merge, rebase, cherry-pick, revert or bisect
+    /// in progress.
+    Dirty = 1,
+    /// `HEAD` has a commit that no remote-tracking branch has. Without a remote,
+    /// a commit that the base branch does not have.
+    Unpushed = 2,
+    /// `HEAD` is detached and has a commit that no branch and no
+    /// remote-tracking branch has.
+    DetachedCommits = 3,
+    /// The Worktree is locked (`git worktree lock`).
+    Locked = 4,
+    /// The Worktree has a `.gitmodules` file.
+    Submodule = 5,
+    /// The Worktree has ignored paths that are not build output: for example
+    /// `.env` or a local database.
+    IgnoredUserFiles = 6,
+    /// A process of the Host has its current directory in the Worktree.
+    Busy = 7,
+    /// The directory of the Worktree does not exist. git calls the Worktree
+    /// prunable.
+    Missing = 8,
+    /// The directory of the Worktree is on a different file system than its
+    /// parent directory, or it is a mount point.
+    OtherFileSystem = 9,
+    /// The upstream branch of the branch is configured, and its
+    /// remote-tracking branch does not exist: a fetch with prune removed it.
+    UpstreamGone = 10,
+}
+impl WorktreeFlag {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "WORKTREE_FLAG_UNSPECIFIED",
+            Self::Dirty => "WORKTREE_FLAG_DIRTY",
+            Self::Unpushed => "WORKTREE_FLAG_UNPUSHED",
+            Self::DetachedCommits => "WORKTREE_FLAG_DETACHED_COMMITS",
+            Self::Locked => "WORKTREE_FLAG_LOCKED",
+            Self::Submodule => "WORKTREE_FLAG_SUBMODULE",
+            Self::IgnoredUserFiles => "WORKTREE_FLAG_IGNORED_USER_FILES",
+            Self::Busy => "WORKTREE_FLAG_BUSY",
+            Self::Missing => "WORKTREE_FLAG_MISSING",
+            Self::OtherFileSystem => "WORKTREE_FLAG_OTHER_FILE_SYSTEM",
+            Self::UpstreamGone => "WORKTREE_FLAG_UPSTREAM_GONE",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "WORKTREE_FLAG_UNSPECIFIED" => Some(Self::Unspecified),
+            "WORKTREE_FLAG_DIRTY" => Some(Self::Dirty),
+            "WORKTREE_FLAG_UNPUSHED" => Some(Self::Unpushed),
+            "WORKTREE_FLAG_DETACHED_COMMITS" => Some(Self::DetachedCommits),
+            "WORKTREE_FLAG_LOCKED" => Some(Self::Locked),
+            "WORKTREE_FLAG_SUBMODULE" => Some(Self::Submodule),
+            "WORKTREE_FLAG_IGNORED_USER_FILES" => Some(Self::IgnoredUserFiles),
+            "WORKTREE_FLAG_BUSY" => Some(Self::Busy),
+            "WORKTREE_FLAG_MISSING" => Some(Self::Missing),
+            "WORKTREE_FLAG_OTHER_FILE_SYSTEM" => Some(Self::OtherFileSystem),
+            "WORKTREE_FLAG_UPSTREAM_GONE" => Some(Self::UpstreamGone),
+            _ => None,
+        }
+    }
+}
+/// The rule that found the branch of a Worktree merged into the base branch.
+/// The extension that reads the repository applies the rules in this
+/// sequence and gives the first that matches.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum WorktreeMergedBy {
+    /// No rule matches: the branch is not merged, or the facts are not known.
+    Unspecified = 0,
+    /// The base branch has the commit of `HEAD` (`git branch --merged`).
+    Ancestor = 1,
+    /// A merge of `HEAD` into the base branch changes nothing: the base branch
+    /// has each change of the branch. This finds a rebase merge, and a squash
+    /// merge without a later change of the same lines.
+    Tree = 2,
+    /// The upstream branch is gone (`WORKTREE_FLAG_UPSTREAM_GONE`). A forge
+    /// deletes the branch of a merged pull request, but also a person can
+    /// delete a branch that is not merged.
+    UpstreamGone = 3,
+}
+impl WorktreeMergedBy {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "WORKTREE_MERGED_BY_UNSPECIFIED",
+            Self::Ancestor => "WORKTREE_MERGED_BY_ANCESTOR",
+            Self::Tree => "WORKTREE_MERGED_BY_TREE",
+            Self::UpstreamGone => "WORKTREE_MERGED_BY_UPSTREAM_GONE",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "WORKTREE_MERGED_BY_UNSPECIFIED" => Some(Self::Unspecified),
+            "WORKTREE_MERGED_BY_ANCESTOR" => Some(Self::Ancestor),
+            "WORKTREE_MERGED_BY_TREE" => Some(Self::Tree),
+            "WORKTREE_MERGED_BY_UPSTREAM_GONE" => Some(Self::UpstreamGone),
+            _ => None,
+        }
+    }
+}
+/// Why a removal of the directory of a Worktree is refused. The removal
+/// keeps the branch. This version of the protocol removes nothing: the
+/// reasons tell the user what a removal would lose.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum WorktreeRefusal {
+    /// Not a reason. A client ignores it.
+    Unspecified = 0,
+    /// The Worktree is the main worktree of the repository.
+    MainWorktree = 1,
+    /// The directory does not exist. Only a prune of the record of git applies.
+    DirectoryMissing = 2,
+    /// A Session that is not ended is in the Worktree.
+    ActiveSession = 3,
+    /// A process has its current directory in the Worktree.
+    ProcessRunning = 4,
+    /// The Worktree has changes that are not committed.
+    UncommittedChanges = 5,
+    /// `HEAD` has commits that are not pushed.
+    UnpushedCommits = 6,
+    /// `HEAD` is detached and has commits that no branch has.
+    DetachedCommits = 7,
+    /// The Worktree is locked. nomux never removes a lock that it did not set.
+    Locked = 8,
+    /// The Worktree has a submodule. git refuses to move or remove it.
+    Submodule = 9,
+    /// The Worktree has ignored files that are not build output.
+    IgnoredUserFiles = 10,
+    /// The Worktree is on a different file system than its parent directory.
+    OtherFileSystem = 11,
+    /// The Worktree is not finished.
+    NotFinished = 12,
+    /// The facts of the Worktree are not known: see
+    /// `WorktreeInfo.facts_unavailable_reason`.
+    FactsUnknown = 13,
+}
+impl WorktreeRefusal {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "WORKTREE_REFUSAL_UNSPECIFIED",
+            Self::MainWorktree => "WORKTREE_REFUSAL_MAIN_WORKTREE",
+            Self::DirectoryMissing => "WORKTREE_REFUSAL_DIRECTORY_MISSING",
+            Self::ActiveSession => "WORKTREE_REFUSAL_ACTIVE_SESSION",
+            Self::ProcessRunning => "WORKTREE_REFUSAL_PROCESS_RUNNING",
+            Self::UncommittedChanges => "WORKTREE_REFUSAL_UNCOMMITTED_CHANGES",
+            Self::UnpushedCommits => "WORKTREE_REFUSAL_UNPUSHED_COMMITS",
+            Self::DetachedCommits => "WORKTREE_REFUSAL_DETACHED_COMMITS",
+            Self::Locked => "WORKTREE_REFUSAL_LOCKED",
+            Self::Submodule => "WORKTREE_REFUSAL_SUBMODULE",
+            Self::IgnoredUserFiles => "WORKTREE_REFUSAL_IGNORED_USER_FILES",
+            Self::OtherFileSystem => "WORKTREE_REFUSAL_OTHER_FILE_SYSTEM",
+            Self::NotFinished => "WORKTREE_REFUSAL_NOT_FINISHED",
+            Self::FactsUnknown => "WORKTREE_REFUSAL_FACTS_UNKNOWN",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "WORKTREE_REFUSAL_UNSPECIFIED" => Some(Self::Unspecified),
+            "WORKTREE_REFUSAL_MAIN_WORKTREE" => Some(Self::MainWorktree),
+            "WORKTREE_REFUSAL_DIRECTORY_MISSING" => Some(Self::DirectoryMissing),
+            "WORKTREE_REFUSAL_ACTIVE_SESSION" => Some(Self::ActiveSession),
+            "WORKTREE_REFUSAL_PROCESS_RUNNING" => Some(Self::ProcessRunning),
+            "WORKTREE_REFUSAL_UNCOMMITTED_CHANGES" => Some(Self::UncommittedChanges),
+            "WORKTREE_REFUSAL_UNPUSHED_COMMITS" => Some(Self::UnpushedCommits),
+            "WORKTREE_REFUSAL_DETACHED_COMMITS" => Some(Self::DetachedCommits),
+            "WORKTREE_REFUSAL_LOCKED" => Some(Self::Locked),
+            "WORKTREE_REFUSAL_SUBMODULE" => Some(Self::Submodule),
+            "WORKTREE_REFUSAL_IGNORED_USER_FILES" => Some(Self::IgnoredUserFiles),
+            "WORKTREE_REFUSAL_OTHER_FILE_SYSTEM" => Some(Self::OtherFileSystem),
+            "WORKTREE_REFUSAL_NOT_FINISHED" => Some(Self::NotFinished),
+            "WORKTREE_REFUSAL_FACTS_UNKNOWN" => Some(Self::FactsUnknown),
+            _ => None,
+        }
+    }
+}
 /// The failure result of a request.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Error {
@@ -2237,7 +2632,7 @@ pub struct Request {
     /// number plan at the top of this file.
     #[prost(
         oneof = "request::Body",
-        tags = "100, 200, 201, 300, 301, 302, 303, 304, 305, 306, 307, 308, 309, 310, 311, 312, 313, 400, 401, 402, 403, 404, 405, 500, 501, 502, 600, 700, 701, 702, 800, 801, 802, 803, 804, 805, 806"
+        tags = "100, 200, 201, 300, 301, 302, 303, 304, 305, 306, 307, 308, 309, 310, 311, 312, 313, 400, 401, 402, 403, 404, 405, 500, 501, 502, 600, 700, 701, 702, 800, 801, 802, 803, 804, 805, 806, 900"
     )]
     pub body: ::core::option::Option<request::Body>,
 }
@@ -2358,6 +2753,9 @@ pub mod request {
         /// Workspace.Move.
         #[prost(message, tag = "806")]
         WorkspaceMove(super::WorkspaceMoveRequest),
+        /// Worktree.List.
+        #[prost(message, tag = "900")]
+        WorktreeList(super::WorktreeListRequest),
     }
 }
 /// The response from the daemon to one request.
@@ -2370,7 +2768,7 @@ pub struct Response {
     /// the field number plan at the top of this file.
     #[prost(
         oneof = "response::Result",
-        tags = "2, 100, 200, 201, 300, 301, 302, 303, 304, 305, 306, 307, 308, 309, 310, 311, 312, 313, 400, 401, 402, 403, 404, 405, 500, 501, 502, 600, 700, 701, 702, 800, 801, 802, 803, 804, 805, 806"
+        tags = "2, 100, 200, 201, 300, 301, 302, 303, 304, 305, 306, 307, 308, 309, 310, 311, 312, 313, 400, 401, 402, 403, 404, 405, 500, 501, 502, 600, 700, 701, 702, 800, 801, 802, 803, 804, 805, 806, 900"
     )]
     pub result: ::core::option::Option<response::Result>,
 }
@@ -2496,6 +2894,9 @@ pub mod response {
         /// Workspace.Move.
         #[prost(message, tag = "806")]
         WorkspaceMove(super::WorkspaceMoveResponse),
+        /// Worktree.List.
+        #[prost(message, tag = "900")]
+        WorktreeList(super::WorktreeListResponse),
     }
 }
 /// A message from the daemon that no request asked for. The daemon sends
@@ -2625,4 +3026,101 @@ impl ErrorCode {
             _ => None,
         }
     }
+}
+/// The argument of the method `worktree_facts`.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct WorktreeFactsRequest {
+    /// The absolute path of a worktree of the repository: the directory of a
+    /// Project.
+    #[prost(string, tag = "1")]
+    pub repository: ::prost::alloc::string::String,
+}
+/// The result of the method `worktree_facts`.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct WorktreeFactsResponse {
+    /// The base branch of the merge rules as a short name, for example
+    /// `origin/main`: the branch that `refs/remotes/origin/HEAD` names, else
+    /// `main`, else `master`, as a remote-tracking branch of `origin` if it
+    /// exists, else as a local branch. Empty when the repository has none.
+    #[prost(string, tag = "1")]
+    pub base_branch: ::prost::alloc::string::String,
+    /// The modification time of `FETCH_HEAD` in the common git directory:
+    /// milliseconds after the Unix epoch. 0 when the file does not exist.
+    #[prost(uint64, tag = "2")]
+    pub last_fetch_at_ms: u64,
+    /// The main worktree first, then the linked worktrees.
+    #[prost(message, repeated, tag = "3")]
+    pub worktrees: ::prost::alloc::vec::Vec<WorktreeFacts>,
+}
+/// The git facts of one worktree.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct WorktreeFacts {
+    /// The absolute path of the directory of the worktree, with its symbolic
+    /// links resolved if the directory exists.
+    #[prost(string, tag = "1")]
+    pub path: ::prost::alloc::string::String,
+    /// The short name of the branch. Empty when `HEAD` is detached, and for a
+    /// bare repository.
+    #[prost(string, tag = "2")]
+    pub branch: ::prost::alloc::string::String,
+    /// The commit of `HEAD` as a hexadecimal object ID. Empty for a bare
+    /// repository and before the first commit.
+    #[prost(string, tag = "3")]
+    pub head: ::prost::alloc::string::String,
+    /// True for the main worktree.
+    #[prost(bool, tag = "4")]
+    pub is_main: bool,
+    /// True for the entry of a bare repository.
+    #[prost(bool, tag = "5")]
+    pub is_bare: bool,
+    /// True when the worktree is locked.
+    #[prost(bool, tag = "6")]
+    pub is_locked: bool,
+    /// The reason of the lock. Empty without a reason.
+    #[prost(string, tag = "7")]
+    pub locked_reason: ::prost::alloc::string::String,
+    /// True when the directory of the worktree does not exist.
+    #[prost(bool, tag = "8")]
+    pub is_missing: bool,
+    /// True when the worktree has a `.gitmodules` file.
+    #[prost(bool, tag = "9")]
+    pub has_submodules: bool,
+    /// The newest modification time of `HEAD`, `index` and `logs/HEAD` in the
+    /// git directory of the worktree: milliseconds after the Unix epoch.
+    #[prost(uint64, tag = "10")]
+    pub last_activity_at_ms: u64,
+    /// Why the extension has no other fact of this worktree, as English text
+    /// for the user: for example its directory is not in an approved
+    /// directory. Empty when the fields below are facts. The fields above are
+    /// facts in each case.
+    #[prost(string, tag = "11")]
+    pub error: ::prost::alloc::string::String,
+    /// True when the worktree has a staged, unstaged or untracked file that
+    /// is not ignored, a conflict, or an operation in progress.
+    #[prost(bool, tag = "12")]
+    pub is_dirty: bool,
+    /// The commits of `HEAD` that no remote-tracking branch has; without a
+    /// remote-tracking branch, the commits that the base branch does not have;
+    /// without both, each commit. The count stops at 1000.
+    #[prost(uint32, tag = "13")]
+    pub unpushed_commits: u32,
+    /// True when `HEAD` is detached and has a commit that no branch and no
+    /// remote-tracking branch has.
+    #[prost(bool, tag = "14")]
+    pub has_detached_commits: bool,
+    /// True when the branch has an upstream branch in its configuration, and
+    /// the remote-tracking branch of it does not exist.
+    #[prost(bool, tag = "15")]
+    pub upstream_gone: bool,
+    /// The first merge rule that matches the branch.
+    #[prost(enumeration = "WorktreeMergedBy", tag = "16")]
+    pub merged_by: i32,
+    /// The ignored paths, relative to the directory of the worktree: a
+    /// directory whose content is all ignored is one path that ends with `/`.
+    /// 256 paths at most.
+    #[prost(string, repeated, tag = "17")]
+    pub ignored_paths: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// True when the worktree has more ignored paths than `ignored_paths`.
+    #[prost(bool, tag = "18")]
+    pub ignored_paths_truncated: bool,
 }

@@ -262,7 +262,7 @@ The Agent service gives the status of the Agent run of each Session and of its C
 
 | Field number | Method | Request | Response | Function |
 |-------------:|--------|---------|----------|----------|
-| 500 | `Agent.Tree` | `AgentTreeRequest` | `AgentTreeResponse` | Gives the status of each Session that is not ended, with its Child work if the request asks for it, and the most urgent status of the Host. |
+| 500 | `Agent.Tree` | `AgentTreeRequest` | `AgentTreeResponse` | Gives the status of each Session that is not ended and the kept Agent run of each ended Session that has one, with its Child work if the request asks for it, and the most urgent status of the Host. |
 | 501 | `Agent.Explain` | `AgentExplainRequest` | `AgentExplainResponse` | Gives the status of one Session and what each source says about it. |
 | 502 | `Agent.SetStatus` | `AgentSetStatusRequest` | `AgentSetStatusResponse` | A program in a Session reports the status of that Session: the self-report. |
 
@@ -336,7 +336,7 @@ With the same priority, the status with the smallest `since_ms` is more urgent: 
 
 A Session in the state `SESSION_STATE_DORMANT` has no process, thus it has no work that runs and no work that waits for the user. When a Session becomes dormant, the daemon changes each `AGENT_STATE_WORKING` and `AGENT_STATE_NEEDS_YOU` status of it to `AGENT_STATE_DONE` with the source `STATUS_SOURCE_SESSION_RESTORE`. A Session that was dormant when the daemon started has the state `AGENT_STATE_IDLE` with the source `STATUS_SOURCE_NONE`. After a restore, the status comes from the sources of the new process.
 
-A Session in the state `SESSION_STATE_ENDED` has no Agent run.
+A Session in the state `SESSION_STATE_ENDED` can keep its last Agent run: the kept run. When the command of the Session ends, the daemon changes the Agent run with the rule of a dormant Session, and the `details` stay. No source changes a kept run. The daemon keeps a limited number of kept runs, and removes the oldest one first. A kept run stays until the daemon removes it or the Session. An ended Session without a kept run has no Agent run.
 
 #### Self-report
 
@@ -351,7 +351,8 @@ Errors of the Agent service:
 
 | Request | Condition | Code |
 |---------|-----------|------|
-| `AgentExplainRequest`, `AgentSetStatusRequest` | No Session has the identifier, or the Session has the state `SESSION_STATE_ENDED`. | `ERROR_CODE_NOT_FOUND` |
+| `AgentExplainRequest` | No Session has the identifier, or the Session has the state `SESSION_STATE_ENDED` and no kept run. | `ERROR_CODE_NOT_FOUND` |
+| `AgentSetStatusRequest` | No Session has the identifier, or the Session has the state `SESSION_STATE_ENDED`. | `ERROR_CODE_NOT_FOUND` |
 | `AgentSetStatusRequest` | The token is empty or is not the token of the Session, or the daemon has no token of the Session: its holder is too old to make one, or the Session has no process. | `ERROR_CODE_PERMISSION_DENIED` |
 | `AgentSetStatusRequest` | The state is `AGENT_STATE_UNSPECIFIED` or a value that the daemon does not know, or the message is longer than 512 bytes, has more than one line or has a control character. | `ERROR_CODE_FAILED` |
 
@@ -367,7 +368,7 @@ The Events service gives a client the changes on a Host as a stream of `Event` m
 - Each event has a sequence number `seq`. The first event of a daemon has the number 1, and each event has the number after the event before it. The numbers start again when the daemon starts again.
 - The daemon keeps the last events in memory, with a limit of their number and of their bytes: 1024 events, or fewer when the events are large. An event has the Agent run of a Session, and a program in the Session decides its size. A client that connects again sends the `seq` after the last one that it has as `from_seq`, and it gets each event from there on, one time, if the daemon still has that event.
 - With `from_seq` 0, the client gets only the events after the request.
-- If the daemon does not have the event `from_seq` any more, or if `from_seq` is larger than the number after the newest event (the daemon started again), the client gets a snapshot: one `EventsSnapshot` event, then one `AgentRunChanged` event for each Session that is not ended, and then the events that follow. The events of a snapshot have the `seq` of the newest event at that time. A client that gets an `EventsSnapshot` discards the state that it has.
+- If the daemon does not have the event `from_seq` any more, or if `from_seq` is larger than the number after the newest event (the daemon started again), the client gets a snapshot: one `EventsSnapshot` event, then one `AgentRunChanged` event for each Session that is not ended and for each kept run, and then the events that follow. The events of a snapshot have the `seq` of the newest event at that time. A client that gets an `EventsSnapshot` discards the state that it has.
 - A client that is slow gets the events later. If it is too far behind, it gets a snapshot as above. The daemon keeps no queue for one client.
 - With `types`, the client gets only the events of these types. The filter does not apply to `EventsSnapshot`.
 
@@ -375,7 +376,7 @@ The Events service gives a client the changes on a Host as a stream of `Event` m
 |-----------------------------:|-------|---------------------|---------|
 | 500 | `AgentRunChanged` | `EVENT_TYPE_AGENT_RUN_CHANGED` | A part of the status of a Session or of its Child work changed. The event has the Agent run after the change. |
 | 400 | `ExtensionEvent` | `EVENT_TYPE_EXTENSION_EVENT` | The daemon part of an extension sent an event. The daemon drops an event whose payload is larger than 65536 bytes. |
-| 501 | `AgentRunRemoved` | `EVENT_TYPE_AGENT_RUN_REMOVED` | The Session ended or was removed. |
+| 501 | `AgentRunRemoved` | `EVENT_TYPE_AGENT_RUN_REMOVED` | The Session has no Agent run any more: it ended without a kept run, the daemon removed its kept run, or the Session was removed. |
 | 600 | `EventsSnapshot` | none | The state of the Host follows. |
 
 A client ignores an event whose body it does not know.

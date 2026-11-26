@@ -123,8 +123,9 @@ pub struct AgentTreeRequest {
 /// The reply to `AgentTreeRequest`.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AgentTreeResponse {
-    /// One Agent run for each Session that is not ended, in the sequence of
-    /// the session identifiers.
+    /// One Agent run for each Session that is not ended and the kept run of
+    /// each ended Session that has one, in the sequence of the session
+    /// identifiers.
     #[prost(message, repeated, tag = "1")]
     pub runs: ::prost::alloc::vec::Vec<AgentRun>,
     /// The identifier of the Session that has the most urgent status. Empty if
@@ -208,8 +209,8 @@ pub struct AgentRunChanged {
     #[prost(message, optional, tag = "1")]
     pub run: ::core::option::Option<AgentRun>,
 }
-/// Event: a Session has no Agent run any more, because the Session ended or
-/// was removed.
+/// Event: a Session has no Agent run any more: it ended without a kept run,
+/// the daemon removed its kept run, or the Session was removed.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct AgentRunRemoved {
     /// The identifier of the Session.

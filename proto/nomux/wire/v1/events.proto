@@ -1,0 +1,48 @@
+// Events service of the nomux control protocol: the stream of the events of
+// a Host.
+//
+// The request and the response are fields of `Request.body` and
+// `Response.result` (see envelope.proto). The Events service has the field
+// numbers 600 to 699 there, and its own events have the same block in
+// `Event.body`.
+//
+// STATUS: DRAFT. The messages can change in a minor version until version
+// 1.0.0.
+
+syntax = "proto3";
+
+package nomux.wire.v1;
+
+// The type of an event, for the filter of a subscription.
+enum EventType {
+  // Not a type. The daemon ignores the value in a filter.
+  EVENT_TYPE_UNSPECIFIED = 0;
+  // `AgentRunChanged`.
+  EVENT_TYPE_AGENT_RUN_CHANGED = 1;
+  // `AgentRunRemoved`.
+  EVENT_TYPE_AGENT_RUN_REMOVED = 2;
+}
+
+// Events.Subscribe: asks for the events of the Host on this connection. It
+// is the last request on its connection.
+message EventsSubscribeRequest {
+  // The sequence number of the first event that the client asks for. With
+  // 0, the client gets only the events after this request.
+  uint64 from_seq = 1;
+  // The types of the events that the client asks for. Without a type, the
+  // client gets each event. A `EventsSnapshot` is not filtered.
+  repeated EventType types = 2;
+}
+
+// The reply to `EventsSubscribeRequest`. After it, the connection carries
+// only `Event` messages from the daemon.
+message EventsSubscribeResponse {
+  // The sequence number of the newest event of the Host at the time of the
+  // request. 0 if the Host has no event.
+  uint64 last_seq = 1;
+}
+
+// Event: the daemon does not have the events that the client asks for. The
+// events that follow this one first give the state of the Host now, and
+// then the changes.
+message EventsSnapshot {}

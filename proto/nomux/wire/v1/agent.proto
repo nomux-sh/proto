@@ -1,0 +1,227 @@
+// Agent service of the nomux control protocol: the status of the Agent run
+// of each Session and of its Child work.
+//
+// The requests and the responses are fields of `Request.body` and
+// `Response.result` (see envelope.proto). The Agent service has the field
+// numbers 500 to 599 there, and its events have the same block in
+// `Event.body`.
+//
+// STATUS: DRAFT. The messages can change in a minor version until version
+// 1.0.0.
+
+syntax = "proto3";
+
+package nomux.wire.v1;
+
+// What an Agent run or a Child work does.
+enum AgentState {
+  // The daemon did not set the field. The client treats the state as unknown.
+  AGENT_STATE_UNSPECIFIED = 0;
+  // Nothing runs, and nothing waits for the user.
+  AGENT_STATE_IDLE = 1;
+  // Work runs.
+  AGENT_STATE_WORKING = 2;
+  // Work is complete. `AgentStatus.seen` says if the user saw the result.
+  AGENT_STATE_DONE = 3;
+  // The work cannot continue until the user does something.
+  // `AgentStatus.kind` says what, if a source knows it.
+  AGENT_STATE_NEEDS_YOU = 4;
+  // The work failed and stopped. `AgentStatus.seen` says if the user saw the
+  // failure.
+  AGENT_STATE_ERROR = 5;
+}
+
+// What the user must do in the state `AGENT_STATE_NEEDS_YOU`.
+enum NeedsYouKind {
+  // No source says what the work waits for.
+  NEEDS_YOU_KIND_UNSPECIFIED = 0;
+  // The user must approve an operation.
+  NEEDS_YOU_KIND_PERMISSION = 1;
+  // The user must type an answer.
+  NEEDS_YOU_KIND_QUESTION = 2;
+  // The user must give a login, a token or a credential.
+  NEEDS_YOU_KIND_AUTH = 3;
+}
+
+// Where a part of a status comes from. The values are in the sequence of
+// the trust that the daemon has in them: a source with a smaller number,
+// but not 0 and 1, decides before a source with a larger number. A later
+// version adds sources. A client treats a value that it does not know as a
+// source without a name.
+enum StatusSource {
+  // The daemon did not set the field.
+  STATUS_SOURCE_UNSPECIFIED = 0;
+  // No source reports a status. The state is `AGENT_STATE_IDLE`.
+  STATUS_SOURCE_NONE = 1;
+  // A program in the Session reported the status in the terminal stream:
+  // the Program Status Protocol, OSC 7501.
+  STATUS_SOURCE_PROGRAM_STATUS = 20;
+  // A program in the Session reported the status with `Agent.SetStatus`.
+  STATUS_SOURCE_SELF_REPORT = 30;
+  // The Session lost its process while work ran or waited for the user. The
+  // daemon shows that work as done: it does not run.
+  STATUS_SOURCE_SESSION_RESTORE = 40;
+  // A guess from the prompt marks of the shell (OSC 133): a command runs,
+  // or the input line waits.
+  STATUS_SOURCE_PROMPT_MARKS = 50;
+  // A guess from the foreground process group of the terminal: a program
+  // that is not the command of the Session runs there, or does not.
+  STATUS_SOURCE_FOREGROUND_PROGRAM = 60;
+}
+
+// A text of a status and the source that gave it.
+message StatusText {
+  // One line of text without a control character.
+  string text = 1;
+  // The source of the text.
+  StatusSource source = 2;
+}
+
+// The progress of a status and the source that gave it.
+message StatusProgress {
+  // The percentage of the work that is done: 0 to 100.
+  uint32 percent = 1;
+  // The source of the percentage.
+  StatusSource source = 2;
+}
+
+// The status of one Agent run or of one Child work. Each part has its
+// source, thus a client can tell a report from a guess.
+message AgentStatus {
+  // What the work does.
+  AgentState state = 1;
+  // What the user must do. Only with `AGENT_STATE_NEEDS_YOU`.
+  NeedsYouKind kind = 2;
+  // The source of `state` and of `kind`.
+  StatusSource source = 3;
+  // When the daemon saw the current `state` and `kind` for the first time:
+  // milliseconds after the Unix epoch.
+  uint64 since_ms = 4;
+  // `true` if the user saw the result. It has a meaning only with
+  // `AGENT_STATE_DONE` and `AGENT_STATE_ERROR`.
+  bool seen = 5;
+  // What the work does, waits for or completed. Absent if no source that
+  // agrees with `state` gave a message.
+  StatusText message = 6;
+  // The label of the work. Absent if no source gave one.
+  StatusText title = 7;
+  // The progress of the work. Absent if no source gave one.
+  StatusProgress progress = 8;
+  // The name of the tool that runs, for example `claude-code`. Absent if no
+  // source gave one.
+  StatusText tool = 9;
+}
+
+// One Child work: a subagent, a teammate or a background task below an
+// Agent run or below a Child work.
+message ChildWork {
+  // The name of the Child work below its parent.
+  string name = 1;
+  // The status of this Child work. Absent if no source reports it: the
+  // Child work is known only because a Child work below it has a status.
+  AgentStatus status = 2;
+  // The most urgent status of this Child work and of each Child work below
+  // it.
+  AgentStatus aggregate = 3;
+  // The Child work below this one, in the sequence of their names.
+  repeated ChildWork children = 4;
+}
+
+// The status of what runs in one Session. In this version, each Session
+// has one Agent run.
+message AgentRun {
+  // The identifier of the Session.
+  string session_id = 1;
+  // The status of the Agent run.
+  AgentStatus status = 2;
+  // The most urgent status of the Agent run and of each Child work below
+  // it.
+  AgentStatus aggregate = 3;
+  // The Child work of the Agent run, in the sequence of their names.
+  repeated ChildWork children = 4;
+}
+
+// Agent.Tree: asks for the status of each Session of the Host.
+message AgentTreeRequest {
+  // If the value is true, each Agent run of the response has its Child
+  // work. If it is false, `AgentRun.children` is empty, and
+  // `AgentRun.aggregate` still includes the Child work.
+  bool include_children = 1;
+}
+
+// The reply to `AgentTreeRequest`.
+message AgentTreeResponse {
+  // One Agent run for each Session that is not ended, in the sequence of
+  // the session identifiers.
+  repeated AgentRun runs = 1;
+  // The identifier of the Session that has the most urgent status. Empty if
+  // the Host has no Session.
+  string attention_session_id = 2;
+  // The most urgent status of the Host: the `aggregate` of the Session
+  // `attention_session_id`. Absent if the Host has no Session.
+  AgentStatus aggregate = 3;
+}
+
+// Agent.Explain: asks why a Session has its status.
+message AgentExplainRequest {
+  // The identifier of the Session.
+  string session_id = 1;
+}
+
+// What one source says about the Agent run of a Session.
+message SourceReport {
+  // The source.
+  StatusSource source = 1;
+  // `true` if the source reports a status now. If `false`, `state`, `kind`
+  // and `message` are not set.
+  bool reported = 2;
+  // The state that the source reports.
+  AgentState state = 3;
+  // What the user must do, if the source says it.
+  NeedsYouKind kind = 4;
+  // The message that the source reports. Empty if it has none.
+  string message = 5;
+  // Why the source reports nothing, or what its report is based on. The
+  // text is in English and is not stable.
+  string note = 6;
+}
+
+// The reply to `AgentExplainRequest`.
+message AgentExplainResponse {
+  // The Agent run of the Session.
+  AgentRun run = 1;
+  // Each source that the daemon has, in the sequence in which they decide.
+  repeated SourceReport sources = 2;
+}
+
+// Agent.SetStatus: a program in a Session reports the status of that
+// Session. The self-report.
+message AgentSetStatusRequest {
+  // The identifier of the Session: the value of `NOMUX_SESSION_ID`.
+  string session_id = 1;
+  // The token of the Session: the value of `NOMUX_TOKEN`. It proves that
+  // the request comes from a process of the Session.
+  string token = 2;
+  // The state to report. `AGENT_STATE_IDLE` removes the self-report.
+  AgentState state = 3;
+  // What the work does, waits for or completed: one line of 512 bytes at
+  // most without a control character. It can be empty.
+  string message = 4;
+}
+
+// The reply to `AgentSetStatusRequest`.
+message AgentSetStatusResponse {}
+
+// Event: the status of the Agent run of a Session, or of a Child work below
+// it, changed.
+message AgentRunChanged {
+  // The Agent run after the change.
+  AgentRun run = 1;
+}
+
+// Event: a Session has no Agent run any more, because the Session ended or
+// was removed.
+message AgentRunRemoved {
+  // The identifier of the Session.
+  string session_id = 1;
+}

@@ -74,6 +74,22 @@ pub struct ChildWork {
     #[prost(message, repeated, tag = "4")]
     pub children: ::prost::alloc::vec::Vec<ChildWork>,
 }
+/// What an adapter extension says about the Agent run of a Session, beyond
+/// its status. The source is always `STATUS_SOURCE_ADAPTER`. Each field is one
+/// line of 512 bytes at most, or empty if the adapter did not give it.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct AgentDetails {
+    /// The model that the agent uses.
+    #[prost(string, tag = "1")]
+    pub model: ::prost::alloc::string::String,
+    /// The identifier of the session of the agent tool, as the tool names it.
+    #[prost(string, tag = "2")]
+    pub provider_session_id: ::prost::alloc::string::String,
+    /// A command that continues the session of the agent tool. It has no
+    /// prompt and no secret.
+    #[prost(string, tag = "3")]
+    pub resume_command: ::prost::alloc::string::String,
+}
 /// The status of what runs in one Session. In this version, each Session
 /// has one Agent run.
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -91,6 +107,9 @@ pub struct AgentRun {
     /// The Child work of the Agent run, in the sequence of their names.
     #[prost(message, repeated, tag = "4")]
     pub children: ::prost::alloc::vec::Vec<ChildWork>,
+    /// The details of the Agent run. Absent if no adapter gave them.
+    #[prost(message, optional, tag = "5")]
+    pub details: ::core::option::Option<AgentDetails>,
 }
 /// Agent.Tree: asks for the status of each Session of the Host.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
@@ -293,6 +312,9 @@ pub enum StatusSource {
     Unspecified = 0,
     /// No source reports a status. The state is `AGENT_STATE_IDLE`.
     None = 1,
+    /// An adapter extension reported the status from the events of the agent
+    /// tool, for example from its hooks.
+    Adapter = 10,
     /// A program in the Session reported the status in the terminal stream:
     /// the Program Status Protocol, OSC 7501.
     ProgramStatus = 20,
@@ -317,6 +339,7 @@ impl StatusSource {
         match self {
             Self::Unspecified => "STATUS_SOURCE_UNSPECIFIED",
             Self::None => "STATUS_SOURCE_NONE",
+            Self::Adapter => "STATUS_SOURCE_ADAPTER",
             Self::ProgramStatus => "STATUS_SOURCE_PROGRAM_STATUS",
             Self::SelfReport => "STATUS_SOURCE_SELF_REPORT",
             Self::SessionRestore => "STATUS_SOURCE_SESSION_RESTORE",
@@ -329,11 +352,225 @@ impl StatusSource {
         match value {
             "STATUS_SOURCE_UNSPECIFIED" => Some(Self::Unspecified),
             "STATUS_SOURCE_NONE" => Some(Self::None),
+            "STATUS_SOURCE_ADAPTER" => Some(Self::Adapter),
             "STATUS_SOURCE_PROGRAM_STATUS" => Some(Self::ProgramStatus),
             "STATUS_SOURCE_SELF_REPORT" => Some(Self::SelfReport),
             "STATUS_SOURCE_SESSION_RESTORE" => Some(Self::SessionRestore),
             "STATUS_SOURCE_PROMPT_MARKS" => Some(Self::PromptMarks),
             "STATUS_SOURCE_FOREGROUND_PROGRAM" => Some(Self::ForegroundProgram),
+            _ => None,
+        }
+    }
+}
+/// The argument of the method `hook` of an adapter: one hook event of a
+/// Session. The daemon checked the token of the Session before it calls the
+/// method. The token is not in this message.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct HookEvent {
+    /// The identifier of the Session.
+    #[prost(string, tag = "1")]
+    pub session_id: ::prost::alloc::string::String,
+    /// The name of the tool.
+    #[prost(string, tag = "2")]
+    pub tool: ::prost::alloc::string::String,
+    /// The name of the event.
+    #[prost(string, tag = "3")]
+    pub event: ::prost::alloc::string::String,
+    /// The data of the event: the standard input of the hook.
+    #[prost(bytes = "vec", tag = "4")]
+    pub payload: ::prost::alloc::vec::Vec<u8>,
+    /// `true` if the standard input of the hook was too large. `payload` is
+    /// then empty.
+    #[prost(bool, tag = "5")]
+    pub payload_omitted: bool,
+}
+/// The result of the method `hook`.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct HookAnswer {
+    /// What the hook writes to its standard output. The daemon does not use it
+    /// in this version.
+    #[prost(bytes = "vec", tag = "1")]
+    pub output: ::prost::alloc::vec::Vec<u8>,
+}
+/// The path of the settings file of the tool on one platform.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SettingsPath {
+    /// The platform.
+    #[prost(enumeration = "HookPlatform", tag = "1")]
+    pub platform: i32,
+    /// The path below the home directory of the user: it starts with `~/` and
+    /// has no `.` or `..` part.
+    #[prost(string, tag = "2")]
+    pub path: ::prost::alloc::string::String,
+}
+/// One entry that the hooks need in a JSON settings file.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SettingsEntry {
+    /// A JSON pointer (RFC 6901) to an array, for example `/hooks/Start`. The
+    /// client makes each object and the array on the path that the file does
+    /// not have.
+    #[prost(string, tag = "1")]
+    pub pointer: ::prost::alloc::string::String,
+    /// The JSON value that the array must contain, as JSON text.
+    #[prost(string, tag = "2")]
+    pub value_json: ::prost::alloc::string::String,
+}
+/// The result of the method `hooks.plan`: the change that the hooks of the
+/// tool need in its settings file. The argument of the method is empty. The
+/// client computes, shows and writes the change.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct HookInstallPlan {
+    /// The settings file of the tool on each platform.
+    #[prost(message, repeated, tag = "1")]
+    pub settings_paths: ::prost::alloc::vec::Vec<SettingsPath>,
+    /// The entries that the hooks need, in the sequence in which the client
+    /// adds them.
+    #[prost(message, repeated, tag = "2")]
+    pub entries: ::prost::alloc::vec::Vec<SettingsEntry>,
+}
+/// The argument of the host service `agent.report`: the status of the Agent
+/// run of a Session, as an adapter sees it.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct AgentReport {
+    /// The identifier of the Session.
+    #[prost(string, tag = "1")]
+    pub session_id: ::prost::alloc::string::String,
+    /// The state. `AGENT_STATE_IDLE` removes the report of the adapter.
+    #[prost(enumeration = "AgentState", tag = "2")]
+    pub state: i32,
+    /// What the user must do. Only with `AGENT_STATE_NEEDS_YOU`.
+    #[prost(enumeration = "NeedsYouKind", tag = "3")]
+    pub kind: i32,
+    /// `true` for a `AGENT_STATE_WORKING` that the adapter only infers, for
+    /// example from the event of one tool. It does not replace a state that
+    /// waits for the user.
+    #[prost(bool, tag = "4")]
+    pub soft: bool,
+    /// What the work does, waits for or completed. One line, 512 bytes at
+    /// most. Can be empty.
+    #[prost(string, tag = "5")]
+    pub message: ::prost::alloc::string::String,
+    /// The label of the work. Can be empty.
+    #[prost(string, tag = "6")]
+    pub title: ::prost::alloc::string::String,
+    /// The name of the tool that runs. Can be empty.
+    #[prost(string, tag = "7")]
+    pub tool: ::prost::alloc::string::String,
+    /// The details of the Agent run. Absent: the details do not change.
+    #[prost(message, optional, tag = "8")]
+    pub details: ::core::option::Option<AgentDetails>,
+}
+/// The result of the host services `agent.report` and `agent.child`.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct AgentReportResult {}
+/// The argument of the host service `agent.child`: one Child work of the
+/// Agent run of a Session, as an adapter sees it.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ChildWorkReport {
+    /// The identifier of the Session.
+    #[prost(string, tag = "1")]
+    pub session_id: ::prost::alloc::string::String,
+    /// What happens.
+    #[prost(enumeration = "ChildWorkChange", tag = "2")]
+    pub change: i32,
+    /// The identifier of the Child work in the Session: 1 to 128 bytes without
+    /// `/` and without a control character.
+    #[prost(string, tag = "3")]
+    pub id: ::prost::alloc::string::String,
+    /// The identifier of the parent Child work. Empty: the parent is the Agent
+    /// run. Only with `CHILD_WORK_CHANGE_START`.
+    #[prost(string, tag = "4")]
+    pub parent_id: ::prost::alloc::string::String,
+    /// The state. With `CHILD_WORK_CHANGE_START` and `CHILD_WORK_CHANGE_UPDATE`
+    /// a state that is not `AGENT_STATE_IDLE`; with `CHILD_WORK_CHANGE_END`
+    /// `AGENT_STATE_DONE` or `AGENT_STATE_ERROR`.
+    #[prost(enumeration = "AgentState", tag = "5")]
+    pub state: i32,
+    /// What the user must do. Only with `AGENT_STATE_NEEDS_YOU`.
+    #[prost(enumeration = "NeedsYouKind", tag = "6")]
+    pub kind: i32,
+    /// As `AgentReport.soft`.
+    #[prost(bool, tag = "7")]
+    pub soft: bool,
+    /// What the work does, waits for or completed. One line, 512 bytes at
+    /// most. Can be empty.
+    #[prost(string, tag = "8")]
+    pub message: ::prost::alloc::string::String,
+    /// The label of the work, for example the type of a subagent. Can be
+    /// empty.
+    #[prost(string, tag = "9")]
+    pub title: ::prost::alloc::string::String,
+    /// The name of the tool that runs. Can be empty.
+    #[prost(string, tag = "10")]
+    pub tool: ::prost::alloc::string::String,
+}
+/// The operating system of a settings file.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum HookPlatform {
+    /// Not a platform. The client ignores the path.
+    Unspecified = 0,
+    /// Linux.
+    Linux = 1,
+    /// macOS.
+    Macos = 2,
+}
+impl HookPlatform {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "HOOK_PLATFORM_UNSPECIFIED",
+            Self::Linux => "HOOK_PLATFORM_LINUX",
+            Self::Macos => "HOOK_PLATFORM_MACOS",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "HOOK_PLATFORM_UNSPECIFIED" => Some(Self::Unspecified),
+            "HOOK_PLATFORM_LINUX" => Some(Self::Linux),
+            "HOOK_PLATFORM_MACOS" => Some(Self::Macos),
+            _ => None,
+        }
+    }
+}
+/// What happens to a Child work.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum ChildWorkChange {
+    /// Not a change. The daemon refuses the report.
+    Unspecified = 0,
+    /// The Child work starts.
+    Start = 1,
+    /// The status of the Child work changes.
+    Update = 2,
+    /// The Child work ends. Its last state is `AGENT_STATE_DONE` or
+    /// `AGENT_STATE_ERROR`.
+    End = 3,
+}
+impl ChildWorkChange {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "CHILD_WORK_CHANGE_UNSPECIFIED",
+            Self::Start => "CHILD_WORK_CHANGE_START",
+            Self::Update => "CHILD_WORK_CHANGE_UPDATE",
+            Self::End => "CHILD_WORK_CHANGE_END",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "CHILD_WORK_CHANGE_UNSPECIFIED" => Some(Self::Unspecified),
+            "CHILD_WORK_CHANGE_START" => Some(Self::Start),
+            "CHILD_WORK_CHANGE_UPDATE" => Some(Self::Update),
+            "CHILD_WORK_CHANGE_END" => Some(Self::End),
             _ => None,
         }
     }
@@ -375,6 +612,8 @@ pub enum EventType {
     AgentRunChanged = 1,
     /// `AgentRunRemoved`.
     AgentRunRemoved = 2,
+    /// `ExtensionEvent`.
+    ExtensionEvent = 3,
 }
 impl EventType {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -386,6 +625,7 @@ impl EventType {
             Self::Unspecified => "EVENT_TYPE_UNSPECIFIED",
             Self::AgentRunChanged => "EVENT_TYPE_AGENT_RUN_CHANGED",
             Self::AgentRunRemoved => "EVENT_TYPE_AGENT_RUN_REMOVED",
+            Self::ExtensionEvent => "EVENT_TYPE_EXTENSION_EVENT",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -394,6 +634,7 @@ impl EventType {
             "EVENT_TYPE_UNSPECIFIED" => Some(Self::Unspecified),
             "EVENT_TYPE_AGENT_RUN_CHANGED" => Some(Self::AgentRunChanged),
             "EVENT_TYPE_AGENT_RUN_REMOVED" => Some(Self::AgentRunRemoved),
+            "EVENT_TYPE_EXTENSION_EVENT" => Some(Self::ExtensionEvent),
             _ => None,
         }
     }
@@ -580,6 +821,21 @@ pub mod ext_call_response {
         Error(super::ExtCallError),
     }
 }
+/// Event: the daemon part of an extension sent an event.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ExtensionEvent {
+    /// The identifier of the extension. Two extensions can send events with
+    /// the same name.
+    #[prost(string, tag = "1")]
+    pub extension_id: ::prost::alloc::string::String,
+    /// The name that the extension gave to the event.
+    #[prost(string, tag = "2")]
+    pub name: ::prost::alloc::string::String,
+    /// The payload. The extension selects its encoding. 65536 bytes at most:
+    /// the daemon drops a larger event.
+    #[prost(bytes = "vec", tag = "3")]
+    pub payload: ::prost::alloc::vec::Vec<u8>,
+}
 /// The state of an extension on the Host.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -764,6 +1020,81 @@ impl ClientKind {
             _ => None,
         }
     }
+}
+/// Hooks.Event: a hook of an agent tool in a Session sends one event of the
+/// tool. `nomux hook <tool> <event>` sends it.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+#[prost(skip_debug)]
+pub struct HookEventRequest {
+    /// The identifier of the Session: the value of `NOMUX_SESSION_ID`.
+    #[prost(string, tag = "1")]
+    pub session_id: ::prost::alloc::string::String,
+    /// The token of the Session: the value of `NOMUX_TOKEN`. It proves that
+    /// the request comes from a process of the Session.
+    #[prost(string, tag = "2")]
+    pub token: ::prost::alloc::string::String,
+    /// The name of the tool, for example `testtool`: a lower-case letter, then
+    /// lower-case letters, digits and `-`, 64 bytes at most.
+    #[prost(string, tag = "3")]
+    pub tool: ::prost::alloc::string::String,
+    /// The name of the event, as the hook of the tool gives it: 1 to 128 bytes
+    /// of letters, digits, `-`, `_`, `.` and `:`.
+    #[prost(string, tag = "4")]
+    pub event: ::prost::alloc::string::String,
+    /// The data of the event: the standard input of the hook, for example a
+    /// JSON document. 262144 bytes at most.
+    #[prost(bytes = "vec", tag = "5")]
+    pub payload: ::prost::alloc::vec::Vec<u8>,
+    /// `true` if the standard input of the hook was larger than the limit of
+    /// `payload`. `payload` is then empty.
+    #[prost(bool, tag = "6")]
+    pub payload_omitted: bool,
+}
+/// The reply to `HookEventRequest`.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct HookEventResponse {
+    /// What the hook writes to its standard output: an answer to the tool, for
+    /// example a decision. Empty in this version.
+    #[prost(bytes = "vec", tag = "1")]
+    pub output: ::prost::alloc::vec::Vec<u8>,
+}
+/// Hooks.Plan: asks the adapter of a tool for the change that its hooks need
+/// in the settings file of the tool.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct HooksPlanRequest {
+    /// The name of the tool.
+    #[prost(string, tag = "1")]
+    pub tool: ::prost::alloc::string::String,
+}
+/// The reply to `HooksPlanRequest`.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct HooksPlanResponse {
+    /// The identifier of the adapter extension that answered.
+    #[prost(string, tag = "1")]
+    pub extension_id: ::prost::alloc::string::String,
+    /// The change, as the adapter describes it.
+    #[prost(message, optional, tag = "2")]
+    pub plan: ::core::option::Option<HookInstallPlan>,
+}
+/// Hooks.Adapters: asks for each tool that has an adapter.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct HooksAdaptersRequest {}
+/// One tool and the extension that is its adapter.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct HookAdapter {
+    /// The name of the tool.
+    #[prost(string, tag = "1")]
+    pub tool: ::prost::alloc::string::String,
+    /// The identifier of the adapter extension.
+    #[prost(string, tag = "2")]
+    pub extension_id: ::prost::alloc::string::String,
+}
+/// The reply to `HooksAdaptersRequest`.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct HooksAdaptersResponse {
+    /// Each tool with an adapter, in the sequence of the tool names.
+    #[prost(message, repeated, tag = "1")]
+    pub adapters: ::prost::alloc::vec::Vec<HookAdapter>,
 }
 /// Host.Info: asks for the state of the daemon.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
@@ -1245,7 +1576,7 @@ pub struct Request {
     /// number plan at the top of this file.
     #[prost(
         oneof = "request::Body",
-        tags = "100, 200, 201, 300, 301, 302, 303, 304, 305, 306, 307, 308, 309, 310, 400, 401, 402, 403, 404, 405, 500, 501, 502, 600"
+        tags = "100, 200, 201, 300, 301, 302, 303, 304, 305, 306, 307, 308, 309, 310, 400, 401, 402, 403, 404, 405, 500, 501, 502, 600, 700, 701, 702"
     )]
     pub body: ::core::option::Option<request::Body>,
 }
@@ -1327,6 +1658,15 @@ pub mod request {
         /// Events.Subscribe. It is the last request on its connection.
         #[prost(message, tag = "600")]
         EventsSubscribe(super::EventsSubscribeRequest),
+        /// Hooks.Event.
+        #[prost(message, tag = "700")]
+        HookEvent(super::HookEventRequest),
+        /// Hooks.Plan.
+        #[prost(message, tag = "701")]
+        HooksPlan(super::HooksPlanRequest),
+        /// Hooks.Adapters.
+        #[prost(message, tag = "702")]
+        HooksAdapters(super::HooksAdaptersRequest),
     }
 }
 /// The response from the daemon to one request.
@@ -1339,7 +1679,7 @@ pub struct Response {
     /// the field number plan at the top of this file.
     #[prost(
         oneof = "response::Result",
-        tags = "2, 100, 200, 201, 300, 301, 302, 303, 304, 305, 306, 307, 308, 309, 310, 400, 401, 402, 403, 404, 405, 500, 501, 502, 600"
+        tags = "2, 100, 200, 201, 300, 301, 302, 303, 304, 305, 306, 307, 308, 309, 310, 400, 401, 402, 403, 404, 405, 500, 501, 502, 600, 700, 701, 702"
     )]
     pub result: ::core::option::Option<response::Result>,
 }
@@ -1426,6 +1766,15 @@ pub mod response {
         /// events.
         #[prost(message, tag = "600")]
         EventsSubscribe(super::EventsSubscribeResponse),
+        /// Hooks.Event.
+        #[prost(message, tag = "700")]
+        HookEvent(super::HookEventResponse),
+        /// Hooks.Plan.
+        #[prost(message, tag = "701")]
+        HooksPlan(super::HooksPlanResponse),
+        /// Hooks.Adapters.
+        #[prost(message, tag = "702")]
+        HooksAdapters(super::HooksAdaptersResponse),
     }
 }
 /// A message from the daemon that no request asked for. The daemon sends
@@ -1443,7 +1792,7 @@ pub struct Event {
     /// What occurred. A client ignores an event whose body it does not know.
     /// Each service adds its events here, with numbers of its block of the
     /// field number plan at the top of this file.
-    #[prost(oneof = "event::Body", tags = "500, 501, 600")]
+    #[prost(oneof = "event::Body", tags = "400, 500, 501, 600")]
     pub body: ::core::option::Option<event::Body>,
 }
 /// Nested message and enum types in `Event`.
@@ -1453,6 +1802,9 @@ pub mod event {
     /// field number plan at the top of this file.
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Body {
+        /// Ext: an extension sent an event.
+        #[prost(message, tag = "400")]
+        ExtensionEvent(super::ExtensionEvent),
         /// Agent: the status of a Session changed.
         #[prost(message, tag = "500")]
         AgentRunChanged(::prost::alloc::boxed::Box<super::AgentRunChanged>),

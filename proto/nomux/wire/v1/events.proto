@@ -21,6 +21,8 @@ enum EventType {
   EVENT_TYPE_AGENT_RUN_CHANGED = 1;
   // `AgentRunRemoved`.
   EVENT_TYPE_AGENT_RUN_REMOVED = 2;
+  // `ExtensionEvent`.
+  EVENT_TYPE_EXTENSION_EVENT = 3;
 }
 
 // Events.Subscribe: asks for the events of the Host on this connection. It

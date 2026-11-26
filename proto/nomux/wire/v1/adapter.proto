@@ -1,0 +1,152 @@
+// The payloads between the daemon and an adapter extension: an extension
+// that takes the hook events of an agent tool and reports the status of the
+// agent.
+//
+// These messages are not fields of an `Envelope`. They are the payloads of
+// the extension protocol: the argument and the result of a method of the
+// extension, or of a host service of the daemon. spec/adapter.md has the
+// methods and the host services.
+//
+// STATUS: DRAFT. The messages can change in a minor version until version
+// 1.0.0.
+
+syntax = "proto3";
+
+package nomux.wire.v1;
+
+import "nomux/wire/v1/agent.proto";
+
+// The argument of the method `hook` of an adapter: one hook event of a
+// Session. The daemon checked the token of the Session before it calls the
+// method. The token is not in this message.
+message HookEvent {
+  // The identifier of the Session.
+  string session_id = 1;
+  // The name of the tool.
+  string tool = 2;
+  // The name of the event.
+  string event = 3;
+  // The data of the event: the standard input of the hook.
+  bytes payload = 4;
+  // `true` if the standard input of the hook was too large. `payload` is
+  // then empty.
+  bool payload_omitted = 5;
+}
+
+// The result of the method `hook`.
+message HookAnswer {
+  // What the hook writes to its standard output. The daemon does not use it
+  // in this version.
+  bytes output = 1;
+}
+
+// The operating system of a settings file.
+enum HookPlatform {
+  // Not a platform. The client ignores the path.
+  HOOK_PLATFORM_UNSPECIFIED = 0;
+  // Linux.
+  HOOK_PLATFORM_LINUX = 1;
+  // macOS.
+  HOOK_PLATFORM_MACOS = 2;
+}
+
+// The path of the settings file of the tool on one platform.
+message SettingsPath {
+  // The platform.
+  HookPlatform platform = 1;
+  // The path below the home directory of the user: it starts with `~/` and
+  // has no `.` or `..` part.
+  string path = 2;
+}
+
+// One entry that the hooks need in a JSON settings file.
+message SettingsEntry {
+  // A JSON pointer (RFC 6901) to an array, for example `/hooks/Start`. The
+  // client makes each object and the array on the path that the file does
+  // not have.
+  string pointer = 1;
+  // The JSON value that the array must contain, as JSON text.
+  string value_json = 2;
+}
+
+// The result of the method `hooks.plan`: the change that the hooks of the
+// tool need in its settings file. The argument of the method is empty. The
+// client computes, shows and writes the change.
+message HookInstallPlan {
+  // The settings file of the tool on each platform.
+  repeated SettingsPath settings_paths = 1;
+  // The entries that the hooks need, in the sequence in which the client
+  // adds them.
+  repeated SettingsEntry entries = 2;
+}
+
+// The argument of the host service `agent.report`: the status of the Agent
+// run of a Session, as an adapter sees it.
+message AgentReport {
+  // The identifier of the Session.
+  string session_id = 1;
+  // The state. `AGENT_STATE_IDLE` removes the report of the adapter.
+  AgentState state = 2;
+  // What the user must do. Only with `AGENT_STATE_NEEDS_YOU`.
+  NeedsYouKind kind = 3;
+  // `true` for a `AGENT_STATE_WORKING` that the adapter only infers, for
+  // example from the event of one tool. It does not replace a state that
+  // waits for the user.
+  bool soft = 4;
+  // What the work does, waits for or completed. One line, 512 bytes at
+  // most. Can be empty.
+  string message = 5;
+  // The label of the work. Can be empty.
+  string title = 6;
+  // The name of the tool that runs. Can be empty.
+  string tool = 7;
+  // The details of the Agent run. Absent: the details do not change.
+  AgentDetails details = 8;
+}
+
+// The result of the host services `agent.report` and `agent.child`.
+message AgentReportResult {}
+
+// What happens to a Child work.
+enum ChildWorkChange {
+  // Not a change. The daemon refuses the report.
+  CHILD_WORK_CHANGE_UNSPECIFIED = 0;
+  // The Child work starts.
+  CHILD_WORK_CHANGE_START = 1;
+  // The status of the Child work changes.
+  CHILD_WORK_CHANGE_UPDATE = 2;
+  // The Child work ends. Its last state is `AGENT_STATE_DONE` or
+  // `AGENT_STATE_ERROR`.
+  CHILD_WORK_CHANGE_END = 3;
+}
+
+// The argument of the host service `agent.child`: one Child work of the
+// Agent run of a Session, as an adapter sees it.
+message ChildWorkReport {
+  // The identifier of the Session.
+  string session_id = 1;
+  // What happens.
+  ChildWorkChange change = 2;
+  // The identifier of the Child work in the Session: 1 to 128 bytes without
+  // `/` and without a control character.
+  string id = 3;
+  // The identifier of the parent Child work. Empty: the parent is the Agent
+  // run. Only with `CHILD_WORK_CHANGE_START`.
+  string parent_id = 4;
+  // The state. With `CHILD_WORK_CHANGE_START` and `CHILD_WORK_CHANGE_UPDATE`
+  // a state that is not `AGENT_STATE_IDLE`; with `CHILD_WORK_CHANGE_END`
+  // `AGENT_STATE_DONE` or `AGENT_STATE_ERROR`.
+  AgentState state = 5;
+  // What the user must do. Only with `AGENT_STATE_NEEDS_YOU`.
+  NeedsYouKind kind = 6;
+  // As `AgentReport.soft`.
+  bool soft = 7;
+  // What the work does, waits for or completed. One line, 512 bytes at
+  // most. Can be empty.
+  string message = 8;
+  // The label of the work, for example the type of a subagent. Can be
+  // empty.
+  string title = 9;
+  // The name of the tool that runs. Can be empty.
+  string tool = 10;
+}

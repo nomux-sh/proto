@@ -21,7 +21,8 @@
 //   400 to 499   Ext service.
 //   500 to 599   Agent service.
 //   600 to 699   Events service.
-//   700 and up   Not assigned. Each new service takes the next free block of
+//   700 to 799   Hooks service.
+//   800 and up   Not assigned. Each new service takes the next free block of
 //                100 numbers.
 //
 // A request and its response use the same field number where possible. An
@@ -38,6 +39,7 @@ import "nomux/wire/v1/agent.proto";
 import "nomux/wire/v1/events.proto";
 import "nomux/wire/v1/ext.proto";
 import "nomux/wire/v1/handshake.proto";
+import "nomux/wire/v1/hooks.proto";
 import "nomux/wire/v1/host.proto";
 import "nomux/wire/v1/session.proto";
 
@@ -128,6 +130,12 @@ message Request {
     AgentSetStatusRequest agent_set_status = 502;
     // Events.Subscribe. It is the last request on its connection.
     EventsSubscribeRequest events_subscribe = 600;
+    // Hooks.Event.
+    HookEventRequest hook_event = 700;
+    // Hooks.Plan.
+    HooksPlanRequest hooks_plan = 701;
+    // Hooks.Adapters.
+    HooksAdaptersRequest hooks_adapters = 702;
   }
 }
 
@@ -190,6 +198,12 @@ message Response {
     // Events.Subscribe. After this response, the connection carries only
     // events.
     EventsSubscribeResponse events_subscribe = 600;
+    // Hooks.Event.
+    HookEventResponse hook_event = 700;
+    // Hooks.Plan.
+    HooksPlanResponse hooks_plan = 701;
+    // Hooks.Adapters.
+    HooksAdaptersResponse hooks_adapters = 702;
   }
 }
 
@@ -206,6 +220,8 @@ message Event {
   // Each service adds its events here, with numbers of its block of the
   // field number plan at the top of this file.
   oneof body {
+    // Ext: an extension sent an event.
+    ExtensionEvent extension_event = 400;
     // Agent: the status of a Session changed.
     AgentRunChanged agent_run_changed = 500;
     // Agent: a Session has no status any more.

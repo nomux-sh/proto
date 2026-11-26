@@ -1,0 +1,76 @@
+// Hooks service of the nomux control protocol: the hook events of an agent
+// tool and the adapter extensions that take them.
+//
+// The requests and the responses are fields of `Request.body` and
+// `Response.result` (see envelope.proto). The Hooks service has the field
+// numbers 700 to 799 there.
+//
+// STATUS: DRAFT. The messages can change in a minor version until version
+// 1.0.0.
+
+syntax = "proto3";
+
+package nomux.wire.v1;
+
+import "nomux/wire/v1/adapter.proto";
+
+// Hooks.Event: a hook of an agent tool in a Session sends one event of the
+// tool. `nomux hook <tool> <event>` sends it.
+message HookEventRequest {
+  // The identifier of the Session: the value of `NOMUX_SESSION_ID`.
+  string session_id = 1;
+  // The token of the Session: the value of `NOMUX_TOKEN`. It proves that
+  // the request comes from a process of the Session.
+  string token = 2;
+  // The name of the tool, for example `testtool`: a lower-case letter, then
+  // lower-case letters, digits and `-`, 64 bytes at most.
+  string tool = 3;
+  // The name of the event, as the hook of the tool gives it: 1 to 128 bytes
+  // of letters, digits, `-`, `_`, `.` and `:`.
+  string event = 4;
+  // The data of the event: the standard input of the hook, for example a
+  // JSON document. 262144 bytes at most.
+  bytes payload = 5;
+  // `true` if the standard input of the hook was larger than the limit of
+  // `payload`. `payload` is then empty.
+  bool payload_omitted = 6;
+}
+
+// The reply to `HookEventRequest`.
+message HookEventResponse {
+  // What the hook writes to its standard output: an answer to the tool, for
+  // example a decision. Empty in this version.
+  bytes output = 1;
+}
+
+// Hooks.Plan: asks the adapter of a tool for the change that its hooks need
+// in the settings file of the tool.
+message HooksPlanRequest {
+  // The name of the tool.
+  string tool = 1;
+}
+
+// The reply to `HooksPlanRequest`.
+message HooksPlanResponse {
+  // The identifier of the adapter extension that answered.
+  string extension_id = 1;
+  // The change, as the adapter describes it.
+  HookInstallPlan plan = 2;
+}
+
+// Hooks.Adapters: asks for each tool that has an adapter.
+message HooksAdaptersRequest {}
+
+// One tool and the extension that is its adapter.
+message HookAdapter {
+  // The name of the tool.
+  string tool = 1;
+  // The identifier of the adapter extension.
+  string extension_id = 2;
+}
+
+// The reply to `HooksAdaptersRequest`.
+message HooksAdaptersResponse {
+  // Each tool with an adapter, in the sequence of the tool names.
+  repeated HookAdapter adapters = 1;
+}

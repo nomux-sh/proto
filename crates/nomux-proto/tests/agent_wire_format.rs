@@ -84,6 +84,7 @@ fn run() -> AgentRun {
                 ..ChildWork::default()
             }],
         }],
+        details: None,
     }
 }
 
@@ -153,6 +154,7 @@ fn agent_state_and_kind_values_are_stable() {
 fn status_source_values_are_stable_and_leave_room_between_the_sources() {
     assert_eq!(StatusSource::Unspecified as i32, 0);
     assert_eq!(StatusSource::None as i32, 1);
+    assert_eq!(StatusSource::Adapter as i32, 10);
     assert_eq!(StatusSource::ProgramStatus as i32, 20);
     assert_eq!(StatusSource::SelfReport as i32, 30);
     assert_eq!(StatusSource::SessionRestore as i32, 40);
@@ -165,6 +167,7 @@ fn event_type_values_are_stable() {
     assert_eq!(EventType::Unspecified as i32, 0);
     assert_eq!(EventType::AgentRunChanged as i32, 1);
     assert_eq!(EventType::AgentRunRemoved as i32, 2);
+    assert_eq!(EventType::ExtensionEvent as i32, 3);
 }
 
 #[test]

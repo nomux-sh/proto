@@ -22,6 +22,7 @@ If a peer reads a length that is larger than the maximum, the peer closes the co
 - The client sends a `Request` with an `id`. The `id` is not 0. It is different from the `id` of each request on the same connection that has no response yet.
 - The daemon sends one `Response` with the same `id`. The response has a result, or it has an `Error`.
 - The first request on a connection is `Hello`. [compatibility.md](compatibility.md) has the version rule.
+- The daemon sends an `Event` only on a connection that asked for events with `Events.Subscribe`. "Events" has the rules.
 - If the daemon does not know the body of a request, it sends an `Error` with the code `ERROR_CODE_FAILED`. The connection stays open.
 
 ## Error codes
@@ -49,6 +50,10 @@ Each service has its own block of 100 field numbers in `Request.body` and in `Re
 | Host | 200 to 299 | `host.proto` |
 | Session | 300 to 399 | `session.proto` |
 | Ext | 400 to 499 | `ext.proto` |
+| Agent | 500 to 599 | `agent.proto` |
+| Events | 600 to 699 | `events.proto` |
+
+An event of a service has a field number of the block of that service in `Event.body`.
 
 ### Handshake
 
@@ -250,6 +255,125 @@ Errors of the Ext service:
 | `ExtCallRequest` | The extension did not answer in the permitted time. | `ERROR_CODE_TIMEOUT` |
 | `ExtCallRequest` | The payload or the result does not go into one `Envelope`. | `ERROR_CODE_FAILED` |
 
+### Agent
+
+The Agent service gives the status of the Agent run of each Session and of its Child work. In this version, each Session has one Agent run: what runs in the Session.
+
+| Field number | Method | Request | Response | Function |
+|-------------:|--------|---------|----------|----------|
+| 500 | `Agent.Tree` | `AgentTreeRequest` | `AgentTreeResponse` | Gives the status of each Session that is not ended, with its Child work if the request asks for it, and the most urgent status of the Host. |
+| 501 | `Agent.Explain` | `AgentExplainRequest` | `AgentExplainResponse` | Gives the status of one Session and what each source says about it. |
+| 502 | `Agent.SetStatus` | `AgentSetStatusRequest` | `AgentSetStatusResponse` | A program in a Session reports the status of that Session: the self-report. |
+
+An Agent run or a Child work has one of these states:
+
+| Value | Name | Meaning |
+|------:|------|---------|
+| 0 | `AGENT_STATE_UNSPECIFIED` | The daemon did not set the field. The client treats the state as unknown. |
+| 1 | `AGENT_STATE_IDLE` | Nothing runs, and nothing waits for the user. |
+| 2 | `AGENT_STATE_WORKING` | Work runs. |
+| 3 | `AGENT_STATE_DONE` | Work is complete. `seen` says if the user saw the result. |
+| 4 | `AGENT_STATE_NEEDS_YOU` | The work cannot continue until the user does something. `kind` says what: `NEEDS_YOU_KIND_PERMISSION`, `NEEDS_YOU_KIND_QUESTION` or `NEEDS_YOU_KIND_AUTH`, or `NEEDS_YOU_KIND_UNSPECIFIED` if no source says it. |
+| 5 | `AGENT_STATE_ERROR` | The work failed and stopped. `seen` says if the user saw the failure. |
+
+A client treats a state that it does not know as unknown.
+
+#### Sources
+
+Each part of an `AgentStatus` has its source: the state with its kind, the message, the title, the progress and the name of the tool. Thus a client can tell a report of a program from a guess of the daemon, and it must not show a guess as a fact.
+
+| Value | Name | The status comes from |
+|------:|------|-----------------------|
+| 0 | `STATUS_SOURCE_UNSPECIFIED` | The daemon did not set the field. |
+| 1 | `STATUS_SOURCE_NONE` | No source. The state is `AGENT_STATE_IDLE`. |
+| 20 | `STATUS_SOURCE_PROGRAM_STATUS` | A report of a program in the terminal stream of the Session: the Program Status Protocol (OSC 7501). |
+| 30 | `STATUS_SOURCE_SELF_REPORT` | `Agent.SetStatus`. |
+| 40 | `STATUS_SOURCE_SESSION_RESTORE` | The Session lost its process while work ran or waited for the user. The daemon shows that work as `AGENT_STATE_DONE`. |
+| 50 | `STATUS_SOURCE_PROMPT_MARKS` | A guess from the prompt marks of the shell (OSC 133). |
+| 60 | `STATUS_SOURCE_FOREGROUND_PROGRAM` | A guess from the foreground process group of the terminal of the Session. |
+
+- The sources decide in the sequence of their values from 20 on: the first source that reports a state gives the state and the kind. The values have room between them, because a later version adds sources, for example the events of an agent tool.
+- A text or the progress comes from the first source that has it and that reports the same state as the source of the state. A text of a source that reports a different state is not shown: it describes a different state.
+- A message has 512 bytes at most. The daemon cuts a longer message of a program at the end of a character.
+- A client treats a source that it does not know as a source without a name. It does not treat it as a guess or as a report.
+- `AgentExplainResponse.sources` has one `SourceReport` for each source that the daemon has, in the sequence in which they decide, also for a source that reports nothing. The `note` of a report says why the source reports nothing, or what its report is based on.
+
+#### Child work
+
+A `ChildWork` is a subagent, a teammate or a background task below an Agent run or below a Child work. The tree has 8 levels of Child work at most.
+
+- `status` is the status of the Child work. It is absent if no source reports the Child work and it is in the tree only because a Child work below it has a status.
+- `children` are in the sequence of their names.
+
+#### Aggregation
+
+`aggregate` is the most urgent status of an item and of each Child work below it. `AgentTreeResponse.aggregate` is the most urgent status of the Host, and `attention_session_id` names the Session that has it.
+
+The priority, from the most urgent:
+
+1. `AGENT_STATE_NEEDS_YOU`.
+2. `AGENT_STATE_ERROR` with `seen` false.
+3. `AGENT_STATE_DONE` with `seen` false.
+4. `AGENT_STATE_WORKING`.
+5. Each other status: `AGENT_STATE_IDLE`, and `AGENT_STATE_DONE` or `AGENT_STATE_ERROR` with `seen` true.
+
+With the same priority, the status with the smallest `since_ms` is more urgent: the one that waits longest. An aggregate is a copy of one status of the tree, with the source of that status.
+
+#### Since and seen
+
+- `since_ms` is the time at which the daemon saw the current state and kind of an item for the first time. A change of the message or of the progress does not change it.
+- `seen` starts as false with each new state. A `Session.Attach` to the Session sets it for the Agent run and for each Child work: the user looks at the Session.
+- The daemon keeps `since_ms` and `seen` in memory. After a restart of the daemon, `since_ms` is the time at which the new daemon read the status, and `seen` is false.
+
+#### Sessions without a process
+
+A Session in the state `SESSION_STATE_DORMANT` has no process, thus it has no work that runs and no work that waits for the user. When a Session becomes dormant, the daemon changes each `AGENT_STATE_WORKING` and `AGENT_STATE_NEEDS_YOU` status of it to `AGENT_STATE_DONE` with the source `STATUS_SOURCE_SESSION_RESTORE`. A Session that was dormant when the daemon started has the state `AGENT_STATE_IDLE` with the source `STATUS_SOURCE_NONE`. After a restore, the status comes from the sources of the new process.
+
+A Session in the state `SESSION_STATE_ENDED` has no Agent run.
+
+#### Self-report
+
+A program in a Session reports the status of its Session with `Agent.SetStatus`. Each Session gets three environment variables for this: `NOMUX_SESSION_ID` (the session identifier), `NOMUX_SOCK` (the path of the socket of the daemon) and `NOMUX_TOKEN` (the token of the Session).
+
+- The token is a random value that the holder of the Session makes at its start. Only the processes of the Session and the daemon know it. It proves that a request comes from a process of that Session, thus a program cannot report for a different Session.
+- A daemon never puts a token in a response, in an event or in a log. A client never prints one.
+- The self-report stays until the next `Agent.SetStatus` of the Session. A request with `AGENT_STATE_IDLE` removes it.
+- A self-report decides only if no source before it reports a state.
+
+Errors of the Agent service:
+
+| Request | Condition | Code |
+|---------|-----------|------|
+| `AgentExplainRequest`, `AgentSetStatusRequest` | No Session has the identifier, or the Session has the state `SESSION_STATE_ENDED`. | `ERROR_CODE_NOT_FOUND` |
+| `AgentSetStatusRequest` | The token is empty or is not the token of the Session, or the daemon has no token of the Session: its holder is too old to make one, or the Session has no process. | `ERROR_CODE_PERMISSION_DENIED` |
+| `AgentSetStatusRequest` | The state is `AGENT_STATE_UNSPECIFIED` or a value that the daemon does not know, or the message is longer than 512 bytes, has more than one line or has a control character. | `ERROR_CODE_FAILED` |
+
+### Events
+
+The Events service gives a client the changes on a Host as a stream of `Event` messages. The daemon does not poll for a change, and a client does not poll the daemon.
+
+| Field number | Method | Request | Response | Function |
+|-------------:|--------|---------|----------|----------|
+| 600 | `Events.Subscribe` | `EventsSubscribeRequest` | `EventsSubscribeResponse` | Starts the stream of the events of the Host on this connection. |
+
+- `EventsSubscribeResponse` is the last response on its connection. After it, the daemon sends only `Event` messages there, and it reads no request. To end the subscription, the client closes the connection.
+- Each event has a sequence number `seq`. The first event of a daemon has the number 1, and each event has the number after the event before it. The numbers start again when the daemon starts again.
+- The daemon keeps the last events in memory: 1024 or more. A client that connects again sends the `seq` after the last one that it has as `from_seq`, and it gets each event from there on, one time.
+- With `from_seq` 0, the client gets only the events after the request.
+- If the daemon does not have the event `from_seq` any more, or if `from_seq` is larger than the number after the newest event (the daemon started again), the client gets a snapshot: one `EventsSnapshot` event, then one `AgentRunChanged` event for each Session that is not ended, and then the events that follow. The events of a snapshot have the `seq` of the newest event at that time. A client that gets an `EventsSnapshot` discards the state that it has.
+- A client that is slow gets the events later. If it is too far behind, it gets a snapshot as above. The daemon keeps no queue for one client.
+- With `types`, the client gets only the events of these types. The filter does not apply to `EventsSnapshot`.
+
+| Field number in `Event.body` | Event | Type for the filter | Meaning |
+|-----------------------------:|-------|---------------------|---------|
+| 500 | `AgentRunChanged` | `EVENT_TYPE_AGENT_RUN_CHANGED` | A part of the status of a Session or of its Child work changed. The event has the Agent run after the change. |
+| 501 | `AgentRunRemoved` | `EVENT_TYPE_AGENT_RUN_REMOVED` | The Session ended or was removed. |
+| 600 | `EventsSnapshot` | none | The state of the Host follows. |
+
+A client ignores an event whose body it does not know.
+
+The daemon does not make an event for a change that only the source `STATUS_SOURCE_FOREGROUND_PROGRAM` sees: the operating system does not tell the daemon when the foreground process group of a terminal changes. The daemon reads that source for `Agent.Tree` and `Agent.Explain`, and when a different source changes.
+
 ## Open items
 
 These items are not decided. The [roadmap](https://github.com/nomux-sh/docs/blob/main/src/content/docs/project/roadmap.md) gives the plan.
@@ -258,5 +382,7 @@ These items are not decided. The [roadmap](https://github.com/nomux-sh/docs/blob
 - A request that detaches one client and not all the clients of a Session.
 - A request that removes an ended Session before its retention time is over, and a request that starts the command of an ended Session again.
 - The name of the environment profile of a Session.
-- The other services: Project, Worktree, Agent, Team, Task and Events.
+- The other services: Project, Worktree, Team and Task.
+- Agent: the events of an agent tool as a source, more than one Agent run in a Session, the kind of a Child work (subagent, teammate, background task), and a self-report for a Child work.
+- Events: a request that marks a Session as seen without an attach, the events of the other services, and an event log that stays after a restart of the daemon.
 - Ext: the installation of an extension from a registry, the update of an extension, and the events of the extensions.

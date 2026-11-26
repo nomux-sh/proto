@@ -72,7 +72,10 @@ fn envelope_wire_bytes_are_stable() {
         })),
     };
     let event = Envelope {
-        kind: Some(envelope::Kind::Event(Event { seq: 9 })),
+        kind: Some(envelope::Kind::Event(Event {
+            seq: 9,
+            ..Event::default()
+        })),
     };
 
     let cases: [(Envelope, &[u8]); 4] = [

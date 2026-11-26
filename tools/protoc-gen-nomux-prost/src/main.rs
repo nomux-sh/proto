@@ -46,9 +46,18 @@ fn generate(request: CodeGeneratorRequest) -> io::Result<Vec<File>> {
     };
     prost_build::Config::new()
         .out_dir(out_dir.path())
-        // `Hello` contains the device token. `nomux-proto` implements `Debug`
-        // for `Hello` by hand and does not print the token.
-        .skip_debug([".nomux.wire.v1.Hello"])
+        // `Hello` contains the device token, and `AgentSetStatusRequest`
+        // contains the token of a Session. `nomux-proto` implements `Debug`
+        // for the two by hand and does not print the token.
+        .skip_debug([
+            ".nomux.wire.v1.Hello",
+            ".nomux.wire.v1.AgentSetStatusRequest",
+        ])
+        // A message with an Agent run or with a status is much larger than
+        // the other messages of its oneof.
+        .boxed(".nomux.wire.v1.Event.body.agent_run_changed")
+        .boxed(".nomux.wire.v1.Response.result.agent_tree")
+        .boxed(".nomux.wire.v1.Response.result.agent_explain")
         .compile_fds(descriptors)?;
 
     let mut files = Vec::new();

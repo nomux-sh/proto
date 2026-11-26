@@ -19,10 +19,13 @@
 //   200 to 299   Host service.
 //   300 to 399   Session service.
 //   400 to 499   Ext service.
-//   500 and up   Not assigned. Each new service takes the next free block of
+//   500 to 599   Agent service.
+//   600 to 699   Events service.
+//   700 and up   Not assigned. Each new service takes the next free block of
 //                100 numbers.
 //
-// A request and its response use the same field number where possible.
+// A request and its response use the same field number where possible. An
+// event body in `Event.body` uses a number of the block of its service.
 // The plan is a comment and not a `reserved` statement: `buf breaking` does
 // not let you delete a reserved range, and each block must stay available to
 // its service.
@@ -31,6 +34,8 @@ syntax = "proto3";
 
 package nomux.wire.v1;
 
+import "nomux/wire/v1/agent.proto";
+import "nomux/wire/v1/events.proto";
 import "nomux/wire/v1/ext.proto";
 import "nomux/wire/v1/handshake.proto";
 import "nomux/wire/v1/host.proto";
@@ -115,6 +120,14 @@ message Request {
     ExtSetEnabledRequest ext_set_enabled = 404;
     // Ext.Call.
     ExtCallRequest ext_call = 405;
+    // Agent.Tree.
+    AgentTreeRequest agent_tree = 500;
+    // Agent.Explain.
+    AgentExplainRequest agent_explain = 501;
+    // Agent.SetStatus.
+    AgentSetStatusRequest agent_set_status = 502;
+    // Events.Subscribe. It is the last request on its connection.
+    EventsSubscribeRequest events_subscribe = 600;
   }
 }
 
@@ -168,18 +181,39 @@ message Response {
     ExtSetEnabledResponse ext_set_enabled = 404;
     // Ext.Call. The extension answered: with a result or with an error.
     ExtCallResponse ext_call = 405;
+    // Agent.Tree.
+    AgentTreeResponse agent_tree = 500;
+    // Agent.Explain.
+    AgentExplainResponse agent_explain = 501;
+    // Agent.SetStatus.
+    AgentSetStatusResponse agent_set_status = 502;
+    // Events.Subscribe. After this response, the connection carries only
+    // events.
+    EventsSubscribeResponse events_subscribe = 600;
   }
 }
 
-// A message from the daemon that no request asked for.
-//
-// Event bodies are not defined yet. The Events service adds a `body` oneof
-// with field numbers from the field number plan.
+// A message from the daemon that no request asked for. The daemon sends
+// events only on a connection that asked for them with `Events.Subscribe`.
 message Event {
   // The position of the event in the event log of the host. The value
   // increases with each event. A client can resume from the last value that
   // it received.
   uint64 seq = 1;
+  // When the event occurred: milliseconds after the Unix epoch.
+  uint64 at_ms = 2;
+  // What occurred. A client ignores an event whose body it does not know.
+  // Each service adds its events here, with numbers of its block of the
+  // field number plan at the top of this file.
+  oneof body {
+    // Agent: the status of a Session changed.
+    AgentRunChanged agent_run_changed = 500;
+    // Agent: a Session has no status any more.
+    AgentRunRemoved agent_run_removed = 501;
+    // Events: the daemon does not have the events that the client asked
+    // for. The state of the Host now follows.
+    EventsSnapshot snapshot = 600;
+  }
 }
 
 // One message on the control channel.

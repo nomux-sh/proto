@@ -58,5 +58,24 @@ pub mod wire {
                     .finish()
             }
         }
+
+        /// `AgentSetStatusRequest` contains the token of a Session, which
+        /// is a secret. This implementation prints all fields but replaces
+        /// the token.
+        impl core::fmt::Debug for AgentSetStatusRequest {
+            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                let token = if self.token.is_empty() {
+                    "<empty>"
+                } else {
+                    "<redacted>"
+                };
+                f.debug_struct("AgentSetStatusRequest")
+                    .field("session_id", &self.session_id)
+                    .field("token", &token)
+                    .field("state", &self.state)
+                    .field("message", &self.message)
+                    .finish()
+            }
+        }
     }
 }

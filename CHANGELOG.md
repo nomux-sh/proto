@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [git-cliff](https://git-cliff.org) writes this file from the commit subjects.
 To see the changes that are not in a version, run `git cliff --unreleased`.
 
+## [0.15.0] - 2026-11-26
+
+### Added
+
+- Add the plan, the clean and the trash place of the worktrees
+
+### Documentation
+
+- State that a HEAD that moved after the plan fails the call
 ## [0.14.0] - 2026-11-26
 
 ### Added

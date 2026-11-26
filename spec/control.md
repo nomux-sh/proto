@@ -67,7 +67,7 @@ An event of a service has a field number of the block of that service in `Event.
 
 | Field number | Method | Request | Response | Function |
 |-------------:|--------|---------|----------|----------|
-| 200 | `Host.Info` | `HostInfoRequest` | `HostInfoResponse` | Gives the product version of the daemon, its process ID and the number of Sessions. Ended Sessions are not in the number. |
+| 200 | `Host.Info` | `HostInfoRequest` | `HostInfoResponse` | Gives the product version of the daemon, its process ID, the number of Sessions and if the operating system applies a memory limit to a Session (`memory_limit`). Ended Sessions are not in the number. |
 | 201 | `Host.Stop` | `HostStopRequest` | `HostStopResponse` | Stops the daemon. The daemon sends the response, closes each connection and exits. No Session ends. |
 
 ### Session
@@ -85,6 +85,8 @@ An event of a service has a field number of the block of that service in `Event.
 | 308 | `Session.Capture` | `SessionCaptureRequest` | `SessionCaptureResponse` | Gives output bytes of a Session that are before a position: the scrollback. |
 | 309 | `Session.SetRestorePolicy` | `SessionSetRestorePolicyRequest` | `SessionSetRestorePolicyResponse` | Sets when the daemon starts the command of a Session again. |
 | 310 | `Session.Memory` | `SessionMemoryRequest` | `SessionMemoryResponse` | Gives the memory that the processes of each Session use. |
+| 311 | `Session.Hibernate` | `SessionHibernateRequest` | `SessionHibernateResponse` | Stops the command of an agent Session that can resume, and keeps the Session as a hibernated Session. |
+| 312 | `Session.SetPinned` | `SessionSetPinnedRequest` | `SessionSetPinnedResponse` | Excludes a Session from automatic hibernation, or takes the exclusion back. |
 
 Errors of the Session service:
 
@@ -103,6 +105,10 @@ Errors of the Session service:
 | `SessionAttachRequest`, `SessionStartRequest` | The Session is dormant and its command cannot start. | `ERROR_CODE_FAILED` |
 | `SessionAttachRequest`, `SessionStartRequest`, `SessionInputRequest`, `SessionResizeRequest`, `SessionSetRestorePolicyRequest` | The Session has the state `SESSION_STATE_DAMAGED`. | `ERROR_CODE_FAILED` |
 | `SessionSetRestorePolicyRequest` | The policy is `RESTORE_POLICY_UNSPECIFIED` or a value that the daemon does not know, or the daemon cannot store the policy. | `ERROR_CODE_FAILED` |
+| `SessionHibernateRequest` | The Session cannot hibernate: see "Hibernation". The message has the reason. | `ERROR_CODE_FAILED` |
+| `SessionHibernateRequest` | The command did not end in the permitted time. | `ERROR_CODE_TIMEOUT` |
+| `SessionAttachRequest`, `SessionStartRequest` | The Session is hibernated and its resume command cannot start. `Session.hibernation.wake_error` has the reason. | `ERROR_CODE_FAILED` |
+| `SessionSetPinnedRequest` | The Session has the state `SESSION_STATE_DAMAGED`, or the daemon cannot store the pin. | `ERROR_CODE_FAILED` |
 
 A Session has one of these states:
 
@@ -125,6 +131,8 @@ A client treats a state that it does not know as unknown.
 - `pid` is not 0 only in the state `SESSION_STATE_RUNNING`.
 - `exit` is set only in the state `SESSION_STATE_ENDED`. It has the time of the end, and the exit code or the signal if the daemon knows it.
 - `resolved_working_directory` is `working_directory` with each symbolic link resolved. The daemon resolves the path one time, when the Session is created or when the daemon finds the Session again after its start, and the value then does not change. It is empty if the path cannot be resolved, and from an older daemon. `working_directory` stays the path that the client sent. A client uses the resolved path to find the Project of the Session: [workspace.md](workspace.md#projects-sessions-and-worktrees).
+- `hibernation` is present while the Session is hibernated, and while its command is the resumed run of its last hibernation: see "Hibernation".
+- `pinned` is true if the user excluded the Session from automatic hibernation.
 - `damage` is not empty when the daemon cannot read a part of the state files of the Session. In the state `SESSION_STATE_DAMAGED`, it is the reason for the state. In a different state, a part of the output of the Session is gone, and the Session can be used.
 
 ### Restore
@@ -143,6 +151,19 @@ The daemon keeps the description and the output of each Session on the Host. Thu
 - `Session.SetRestorePolicy` sets the policy of a Session whose command runs or of a dormant Session. The daemon stores it with the state of the Session.
 - `Session.Start` on a Session whose command runs succeeds and changes nothing.
 - [frame.md](frame.md) specifies what the client of the `SessionAttachRequest` that starts the command gets: the end of the earlier output, a `Restored` frame and the new screen.
+
+### Hibernation
+
+A hibernated Session is a dormant Session whose command the daemon stopped, because the command is an agent that is idle and can resume. The daemon keeps the Session, its output and its kept Agent run, and starts the resume command of the agent when the user opens the Session: the wake. The daemon part of nomux decides when a Session hibernates; this document specifies what a client sees.
+
+- A hibernated Session has the state `SESSION_STATE_DORMANT` and a `hibernation` with `woken_at` 0. For a client that does not know the field, `SESSION_STATE_DORMANT` is the full meaning: the Session has no process, it has its output, and an attach or a start starts it again.
+- `Session.Hibernate` hibernates a Session at once. The daemon refuses it with `ERROR_CODE_FAILED` and the reason if the Session has no resume command, if its command does not run, if its Agent run works or waits for the user, or if its Child work runs. The daemon answers after the command has ended.
+- `Session.SetPinned` with `pinned` true excludes the Session from automatic hibernation. A `Session.Hibernate` still hibernates a pinned Session.
+- A wake is a `Session.Start` or a `Session.Attach` of a hibernated Session. The daemon starts the resume command in a new holder, in the working directory of the Session, and sets `woken_at`. The new epoch is the resumed run. The restore policy of the Session applies to an attach as it does to each dormant Session.
+- A `Session.Attach` of a hibernated Session answers after the daemon has the screen of the hibernated run, thus the client gets that screen as the first frames, before the output of the resumed run: [frame.md](frame.md) has the frames of an attach that starts the command.
+- A wake that fails leaves the Session hibernated. The request fails with `ERROR_CODE_FAILED`, `wake_error` has the reason, and `resume_command` is the command that the user can run by hand.
+- **The resume command never goes to a shell.** `resume_command` is the text of `AgentDetails.resume_command` as the adapter reported it. The daemon divides it into words with the quoting rules of a POSIX shell only: single quotes, double quotes and a backslash. It does no expansion and no substitution, and it has no operators. A command that has, outside quotes, one of `;`, `|`, `&`, `<`, `>`, `(`, `)`, `$`, `` ` ``, `*`, `?`, `[`, `#`, `~` or a line break, or that has `$` or `` ` `` in double quotes, or that has a quote without its end, does not start: the wake fails with the reason. The daemon starts the first word as the program with the other words as its arguments. It adds no word and changes no word.
+- A Session without a resume command is never hibernated automatically.
 
 ### Capture
 
@@ -163,6 +184,7 @@ The daemon keeps the description and the output of each Session on the Host. Thu
 - The response has one entry for each Session that has a holder: the states `SESSION_STATE_RUNNING` and `SESSION_STATE_UNREACHABLE`. A Session without a process has no entry. A Session whose processes end during the request can have no entry.
 - `command_bytes` is the memory of the process tree of the command: the command and each process that descends from it. `command_processes` is the number of these processes. A process that left the tree is not in the value: the operating system gave it a different parent after its own parent ended.
 - `holder_bytes` is the memory of the holder. It is not a part of `command_bytes`.
+- `limit_bytes` is the memory limit that the operating system applies to the processes of the command. When they reach it, the operating system ends them. It is 0 if no such limit applies: the daemon has no limit for the Session, or the operating system of the Host has none that the daemon can use.
 - `measure` says how the daemon measured the two values of one entry:
 
 | Value | Name | Meaning |
@@ -276,7 +298,7 @@ An Agent run or a Child work has one of these states:
 | 1 | `AGENT_STATE_IDLE` | Nothing runs, and nothing waits for the user. |
 | 2 | `AGENT_STATE_WORKING` | Work runs. |
 | 3 | `AGENT_STATE_DONE` | Work is complete. `seen` says if the user saw the result. |
-| 4 | `AGENT_STATE_NEEDS_YOU` | The work cannot continue until the user does something. `kind` says what: `NEEDS_YOU_KIND_PERMISSION`, `NEEDS_YOU_KIND_QUESTION` or `NEEDS_YOU_KIND_AUTH`, or `NEEDS_YOU_KIND_UNSPECIFIED` if no source says it. |
+| 4 | `AGENT_STATE_NEEDS_YOU` | The work cannot continue until the user does something. `kind` says what: `NEEDS_YOU_KIND_PERMISSION`, `NEEDS_YOU_KIND_QUESTION`, `NEEDS_YOU_KIND_AUTH` or `NEEDS_YOU_KIND_PROMPT` (the agent waits at its input prompt, and nothing that it asked for is pending), or `NEEDS_YOU_KIND_UNSPECIFIED` if no source says it. |
 | 5 | `AGENT_STATE_ERROR` | The work failed and stopped. `seen` says if the user saw the failure. |
 
 A client treats a state that it does not know as unknown.
@@ -379,6 +401,10 @@ The Events service gives a client the changes on a Host as a stream of `Event` m
 | 500 | `AgentRunChanged` | `EVENT_TYPE_AGENT_RUN_CHANGED` | A part of the status of a Session or of its Child work changed. The event has the Agent run after the change. |
 | 400 | `ExtensionEvent` | `EVENT_TYPE_EXTENSION_EVENT` | The daemon part of an extension sent an event. The daemon drops an event whose payload is larger than 65536 bytes. |
 | 501 | `AgentRunRemoved` | `EVENT_TYPE_AGENT_RUN_REMOVED` | The Session has no Agent run any more: it ended without a kept run, the daemon removed its kept run, or the Session was removed. |
+| 300 | `SessionHibernated` | `EVENT_TYPE_SESSION_HIBERNATED` | The daemon hibernated a Session. The event has the reason, the memory that the hibernation gave back and the values of the trigger. |
+| 301 | `SessionWoken` | `EVENT_TYPE_SESSION_WOKEN` | A wake started the resume command of a hibernated Session. |
+| 302 | `SessionWakeFailed` | `EVENT_TYPE_SESSION_WAKE_FAILED` | A wake failed. The event has the reason and the resume command. The Session stays hibernated. |
+| 303 | `SessionMemoryLimitReached` | `EVENT_TYPE_SESSION_MEMORY_LIMIT_REACHED` | The operating system ended the command of a Session at its memory limit. |
 | 600 | `EventsSnapshot` | none | The state of the Host follows. |
 | 800 | `WorkspaceChanged` | `EVENT_TYPE_WORKSPACE_CHANGED` | The workspace tree changed. The event has the new revision and one change. [workspace.md](workspace.md#event) has the changes. |
 

@@ -25,6 +25,14 @@ enum EventType {
   EVENT_TYPE_EXTENSION_EVENT = 3;
   // `WorkspaceChanged`.
   EVENT_TYPE_WORKSPACE_CHANGED = 4;
+  // `SessionHibernated`.
+  EVENT_TYPE_SESSION_HIBERNATED = 5;
+  // `SessionWoken`.
+  EVENT_TYPE_SESSION_WOKEN = 6;
+  // `SessionWakeFailed`.
+  EVENT_TYPE_SESSION_WAKE_FAILED = 7;
+  // `SessionMemoryLimitReached`.
+  EVENT_TYPE_SESSION_MEMORY_LIMIT_REACHED = 8;
 }
 
 // Events.Subscribe: asks for the events of the Host on this connection. It

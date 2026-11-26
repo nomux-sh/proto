@@ -41,6 +41,10 @@ enum NeedsYouKind {
   NEEDS_YOU_KIND_QUESTION = 2;
   // The user must give a login, a token or a credential.
   NEEDS_YOU_KIND_AUTH = 3;
+  // The agent waits at its input prompt for the next instruction. Nothing
+  // that the agent asked for is pending, thus a resume of the agent loses
+  // nothing.
+  NEEDS_YOU_KIND_PROMPT = 4;
 }
 
 // Where a part of a status comes from. The values are in the sequence of
@@ -139,7 +143,12 @@ message AgentDetails {
   // The identifier of the session of the agent tool, as the tool names it.
   string provider_session_id = 2;
   // A command that continues the session of the agent tool. It has no
-  // prompt and no secret.
+  // prompt and no secret. It is words with the quoting of a POSIX shell: a
+  // word can be in single or double quotes, and a backslash quotes the next
+  // character. It has no expansion, no substitution and no operator, thus no
+  // unquoted `;`, `|`, `&`, `<`, `>`, `(`, `)`, `$`, `` ` ``, `*`, `?`, `[`,
+  // `#`, `~` and no line break. The daemon never gives the command to a
+  // shell: spec/control.md, "Hibernation".
   string resume_command = 3;
 }
 

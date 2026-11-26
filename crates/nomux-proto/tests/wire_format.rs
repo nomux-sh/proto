@@ -206,6 +206,7 @@ fn host_service_wire_bytes_are_stable() {
             daemon_version: "v".to_owned(),
             daemon_pid: 7,
             session_count: 2,
+            memory_limit: None,
         })),
         [
             0x08, 0x01, // id = 1
@@ -408,6 +409,8 @@ fn the_description_of_a_session_has_stable_wire_bytes() {
         }),
         damage: "d".to_owned(),
         resolved_working_directory: "/r".to_owned(),
+        hibernation: None,
+        pinned: false,
     };
     assert_eq!(
         session.encode_to_vec(),
@@ -532,6 +535,7 @@ fn the_memory_request_of_the_session_service_has_stable_wire_bytes() {
                 command_processes: 2,
                 holder_bytes: 9,
                 measure: MemoryMeasure::Resident.into(),
+                limit_bytes: 0,
             }],
         })),
         [

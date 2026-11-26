@@ -227,7 +227,7 @@ Errors of the Worktree service:
 | `WorktreeCleanRequest` | A different clean runs. | `ERROR_CODE_FAILED` |
 | `WorktreeMarkRequest` | `path` is no Worktree of a Project. | `ERROR_CODE_NOT_FOUND` |
 | `WorktreeRestoreRequest` | No entry has `name`, or more than one entry has it as the last part of its path. | `ERROR_CODE_NOT_FOUND` |
-| `WorktreeRestoreRequest` | `path` of the entry exists. | `ERROR_CODE_ALREADY_EXISTS` |
+| `WorktreeRestoreRequest` | `path` of the entry exists. | `ERROR_CODE_FAILED` |
 | `WorktreeEmptyTrashRequest` | An identifier of `ids` is no entry. | `ERROR_CODE_NOT_FOUND` |
 
 A failure of the extension in `Worktree.List` is not an error of the request: it is the `unavailable_reason` of the Project. In a clean, it is the outcome of an item.

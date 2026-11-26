@@ -358,7 +358,7 @@ The Events service gives a client the changes on a Host as a stream of `Event` m
 
 - `EventsSubscribeResponse` is the last response on its connection. After it, the daemon sends only `Event` messages there, and it reads no request. To end the subscription, the client closes the connection.
 - Each event has a sequence number `seq`. The first event of a daemon has the number 1, and each event has the number after the event before it. The numbers start again when the daemon starts again.
-- The daemon keeps the last events in memory: 1024 or more. A client that connects again sends the `seq` after the last one that it has as `from_seq`, and it gets each event from there on, one time.
+- The daemon keeps the last events in memory, with a limit of their number and of their bytes: 1024 events, or fewer when the events are large. An event has the Agent run of a Session, and a program in the Session decides its size. A client that connects again sends the `seq` after the last one that it has as `from_seq`, and it gets each event from there on, one time, if the daemon still has that event.
 - With `from_seq` 0, the client gets only the events after the request.
 - If the daemon does not have the event `from_seq` any more, or if `from_seq` is larger than the number after the newest event (the daemon started again), the client gets a snapshot: one `EventsSnapshot` event, then one `AgentRunChanged` event for each Session that is not ended, and then the events that follow. The events of a snapshot have the `seq` of the newest event at that time. A client that gets an `EventsSnapshot` discards the state that it has.
 - A client that is slow gets the events later. If it is too far behind, it gets a snapshot as above. The daemon keeps no queue for one client.

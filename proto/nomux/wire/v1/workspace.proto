@@ -1,0 +1,216 @@
+// Workspace service of the nomux control protocol: the tree of the Groups
+// and the Projects of a Host.
+//
+// The requests and the responses are fields of `Request.body` and
+// `Response.result` (see envelope.proto). The Workspace service has the
+// field numbers 800 to 899 there, and its event has the same block in
+// `Event.body`.
+//
+// spec/workspace.md has the rules of the tree, the limits and examples.
+//
+// STATUS: DRAFT. The messages can change in a minor version until version
+// 1.0.0.
+
+syntax = "proto3";
+
+package nomux.wire.v1;
+
+// A Group: a node that holds Projects and Groups.
+message WorkspaceGroup {}
+
+// A Project: a node that names a directory on the Host.
+message WorkspaceProject {
+  // The directory of the Project: an absolute path on the Host, with each
+  // symbolic link resolved. 1024 bytes at most. Two Projects never have the
+  // same directory.
+  string directory = 1;
+}
+
+// One node of the workspace tree: a Group or a Project.
+message WorkspaceNode {
+  // The node identifier: 1 to 32 characters from `A-Z`, `a-z`, `0-9`, `-`
+  // and `_`. The daemon selects it. It does not change, and the daemon does
+  // not use it again for a different node of the Host.
+  string id = 1;
+  // The identifier of the Group that holds the node. Empty for a node at the
+  // top level.
+  string parent_id = 2;
+  // The name of the node: 1 to 128 bytes of UTF-8 without a control
+  // character. Two nodes can have the same name.
+  string name = 3;
+  // What the node is.
+  oneof kind {
+    // The node is a Group.
+    WorkspaceGroup group = 4;
+    // The node is a Project.
+    WorkspaceProject project = 5;
+  }
+}
+
+// Workspace.Tree: asks for the workspace tree of the Host.
+message WorkspaceTreeRequest {}
+
+// The reply to `WorkspaceTreeRequest`.
+message WorkspaceTreeResponse {
+  // The revision of the tree. spec/workspace.md has the rule.
+  uint64 revision = 1;
+  // Each node of the tree, 800 at most. A node comes after its parent, and
+  // the nodes with the same parent are in their sequence among the siblings:
+  // the sequence of a depth-first walk of the tree.
+  repeated WorkspaceNode nodes = 2;
+}
+
+// Workspace.AddProject: adds a Project to the tree.
+message WorkspaceAddProjectRequest {
+  // The directory of the Project: an absolute path of a directory on the
+  // Host, for example the root of a repository.
+  string directory = 1;
+  // The name of the Project.
+  string name = 2;
+  // The identifier of the Group for the Project. Empty for the top level.
+  string parent_id = 3;
+  // The position of the Project among its siblings: 0 is the first. If the
+  // field is absent or is not smaller than the number of siblings, the
+  // Project is the last.
+  optional uint32 index = 4;
+}
+
+// The reply to `WorkspaceAddProjectRequest`.
+message WorkspaceAddProjectResponse {
+  // The revision of the tree after the change.
+  uint64 revision = 1;
+  // The new node.
+  WorkspaceNode node = 2;
+}
+
+// Workspace.RemoveProject: removes a Project from the tree. The daemon
+// changes no file, Session or Worktree.
+message WorkspaceRemoveProjectRequest {
+  // The identifier of the Project.
+  string id = 1;
+}
+
+// The reply to `WorkspaceRemoveProjectRequest`.
+message WorkspaceRemoveProjectResponse {
+  // The revision of the tree after the change.
+  uint64 revision = 1;
+}
+
+// Workspace.CreateGroup: adds an empty Group to the tree.
+message WorkspaceCreateGroupRequest {
+  // The name of the Group.
+  string name = 1;
+  // The identifier of the Group for the new Group. Empty for the top level.
+  string parent_id = 2;
+  // The position of the Group among its siblings, as in
+  // `WorkspaceAddProjectRequest.index`.
+  optional uint32 index = 3;
+}
+
+// The reply to `WorkspaceCreateGroupRequest`.
+message WorkspaceCreateGroupResponse {
+  // The revision of the tree after the change.
+  uint64 revision = 1;
+  // The new node.
+  WorkspaceNode node = 2;
+}
+
+// Workspace.RemoveGroup: removes a Group from the tree. The content of the
+// Group takes the place of the Group in its parent. No node is deleted.
+message WorkspaceRemoveGroupRequest {
+  // The identifier of the Group.
+  string id = 1;
+}
+
+// The reply to `WorkspaceRemoveGroupRequest`.
+message WorkspaceRemoveGroupResponse {
+  // The revision of the tree after the change.
+  uint64 revision = 1;
+}
+
+// Workspace.Rename: changes the name of a Group or of a Project.
+message WorkspaceRenameRequest {
+  // The identifier of the node.
+  string id = 1;
+  // The new name.
+  string name = 2;
+}
+
+// The reply to `WorkspaceRenameRequest`.
+message WorkspaceRenameResponse {
+  // The revision of the tree after the change.
+  uint64 revision = 1;
+}
+
+// Workspace.Move: puts a Group or a Project in a different Group, at the
+// top level, or at a different position among the same siblings.
+message WorkspaceMoveRequest {
+  // The identifier of the node.
+  string id = 1;
+  // The identifier of the Group for the node. Empty for the top level. It
+  // is not the node and not a Group below the node.
+  string parent_id = 2;
+  // The position of the node among its new siblings, without the node
+  // itself. If the field is absent or is not smaller than the number of
+  // these siblings, the node is the last.
+  optional uint32 index = 3;
+}
+
+// The reply to `WorkspaceMoveRequest`.
+message WorkspaceMoveResponse {
+  // The revision of the tree after the change.
+  uint64 revision = 1;
+}
+
+// A node came into the tree: `Workspace.AddProject` or
+// `Workspace.CreateGroup`.
+message WorkspaceNodeAdded {
+  // The new node.
+  WorkspaceNode node = 1;
+  // The position of the node among its siblings: 0 is the first.
+  uint32 index = 2;
+}
+
+// A node has a new name: `Workspace.Rename`.
+message WorkspaceNodeRenamed {
+  // The identifier of the node.
+  string id = 1;
+  // The new name.
+  string name = 2;
+}
+
+// A node has a new parent or a new position: `Workspace.Move`.
+message WorkspaceNodeMoved {
+  // The identifier of the node.
+  string id = 1;
+  // The identifier of the new parent. Empty for the top level.
+  string parent_id = 2;
+  // The new position of the node among its siblings: 0 is the first.
+  uint32 index = 3;
+}
+
+// A node went out of the tree: `Workspace.RemoveProject` or
+// `Workspace.RemoveGroup`. The nodes in a removed Group take the place of
+// the Group in its parent, in their sequence.
+message WorkspaceNodeRemoved {
+  // The identifier of the node.
+  string id = 1;
+}
+
+// Event: the workspace tree changed. Each request that changes the tree
+// makes one event.
+message WorkspaceChanged {
+  // The revision of the tree after the change.
+  uint64 revision = 1;
+  // The change.
+  oneof change {
+    // A node came into the tree.
+    WorkspaceNodeAdded added = 2;
+    // A node has a new name.
+    WorkspaceNodeRenamed renamed = 3;
+    // A node has a new parent or a new position.
+    WorkspaceNodeMoved moved = 4;
+    // A node went out of the tree.
+    WorkspaceNodeRemoved removed = 5;
+  }
+}

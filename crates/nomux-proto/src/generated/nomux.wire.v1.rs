@@ -1198,6 +1198,15 @@ pub struct Session {
     /// English for the user. The value is empty if the files are not damaged.
     #[prost(string, tag = "12")]
     pub damage: ::prost::alloc::string::String,
+    /// The working directory with each symbolic link resolved: an absolute path
+    /// on the Host. The daemon resolves `working_directory` one time, when the
+    /// Session is created or when the daemon finds it again after its start.
+    /// The value is empty if the daemon cannot resolve the path, for example
+    /// because the directory was removed, and from a daemon that is older than
+    /// the field. A client matches the Session with a Project by this value if
+    /// it is not empty, else by `working_directory`: spec/workspace.md.
+    #[prost(string, tag = "13")]
+    pub resolved_working_directory: ::prost::alloc::string::String,
 }
 /// Session.Create: starts a new Session.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]

@@ -407,6 +407,7 @@ fn the_description_of_a_session_has_stable_wire_bytes() {
             status: Some(session_exit::Status::Signal(9)),
         }),
         damage: "d".to_owned(),
+        resolved_working_directory: "/r".to_owned(),
     };
     assert_eq!(
         session.encode_to_vec(),
@@ -425,6 +426,7 @@ fn the_description_of_a_session_has_stable_wire_bytes() {
             0x08, 0x06, // SessionExit field 1, varint: ended_at = 6
             0x18, 0x09, // SessionExit field 3, varint: signal = 9
             0x62, 0x01, b'd', // field 12, bytes: damage = "d"
+            0x6a, 0x02, b'/', b'r', // field 13, bytes: resolved_working_directory = "/r"
         ],
     );
     let exited = SessionExit {

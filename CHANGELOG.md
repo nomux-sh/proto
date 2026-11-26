@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [git-cliff](https://git-cliff.org) writes this file from the commit subjects.
 To see the changes that are not in a version, run `git cliff --unreleased`.
 
+## [0.13.0] - 2026-11-26
+
+### Added
+
+- Add the sandbox profile of a session and its host support
 ## [0.12.0] - 2026-11-26
 
 ### Added

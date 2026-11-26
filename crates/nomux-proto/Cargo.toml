@@ -1,6 +1,6 @@
 [package]
 name = "nomux-proto"
-version = "0.12.0"
+version = "0.13.0"
 description = "The nomux wire protocol: control messages and the terminal frame header"
 edition.workspace = true
 rust-version = "1.85"

@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [git-cliff](https://git-cliff.org) writes this file from the commit subjects.
 To see the changes that are not in a version, run `git cliff --unreleased`.
 
+## [0.8.0] - 2026-11-26
+
+### Added
+
+- Add the Hooks service, the adapter source and extension events
+
+### Documentation
+
+- Limit the event log by the bytes of its events
 ## [0.7.0] - 2026-11-26
 
 ### Added

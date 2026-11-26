@@ -101,6 +101,8 @@ message Request {
     SessionCaptureRequest session_capture = 308;
     // Session.SetRestorePolicy.
     SessionSetRestorePolicyRequest session_set_restore_policy = 309;
+    // Session.Memory.
+    SessionMemoryRequest session_memory = 310;
     // Ext.List.
     ExtListRequest ext_list = 400;
     // Ext.Inspect.
@@ -152,6 +154,8 @@ message Response {
     SessionCaptureResponse session_capture = 308;
     // Session.SetRestorePolicy.
     SessionSetRestorePolicyResponse session_set_restore_policy = 309;
+    // Session.Memory.
+    SessionMemoryResponse session_memory = 310;
     // Ext.List.
     ExtListResponse ext_list = 400;
     // Ext.Inspect.

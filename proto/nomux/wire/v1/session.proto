@@ -264,3 +264,46 @@ message SessionSetRestorePolicyRequest {
 
 // The reply to `SessionSetRestorePolicyRequest`.
 message SessionSetRestorePolicyResponse {}
+
+// How the daemon measured the memory of the processes of a Session.
+enum MemoryMeasure {
+  // The daemon did not set the field. The client treats the measure as
+  // unknown.
+  MEMORY_MEASURE_UNSPECIFIED = 0;
+  // The proportional set size (PSS): the private memory of a process, and
+  // of each shared page the part that is equal for each process that uses
+  // the page. The sum for more than one process counts no page two times.
+  MEMORY_MEASURE_PROPORTIONAL = 1;
+  // The resident set size (RSS): each page of a process that is in memory.
+  // The sum for more than one process counts a shared page one time for
+  // each process that uses it.
+  MEMORY_MEASURE_RESIDENT = 2;
+}
+
+// The memory that the processes of one Session use.
+message SessionMemory {
+  // The identifier of the Session.
+  string id = 1;
+  // The memory of the process tree of the command: the command and each
+  // process that descends from it. The value is in bytes. The memory of the
+  // holder is not in this value.
+  uint64 command_bytes = 2;
+  // The number of processes in the process tree of the command.
+  uint32 command_processes = 3;
+  // The memory of the holder of the Session, in bytes.
+  uint64 holder_bytes = 4;
+  // How the daemon measured `command_bytes` and `holder_bytes`.
+  MemoryMeasure measure = 5;
+}
+
+// Session.Memory: asks for the memory that the processes of each Session
+// use. The daemon measures the memory for this request: it keeps no value
+// and measures nothing when no client asks. spec/control.md has the rules.
+message SessionMemoryRequest {}
+
+// The reply to `SessionMemoryRequest`.
+message SessionMemoryResponse {
+  // One entry for each Session that has a holder, in the sequence of the
+  // identifiers. A Session without a process has no entry.
+  repeated SessionMemory sessions = 1;
+}

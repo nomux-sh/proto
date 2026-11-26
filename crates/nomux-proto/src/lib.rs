@@ -4,8 +4,8 @@
 //!
 //! - [`wire::v1`]: the control messages: the envelope, the handshake, the
 //!   Host service, the Session service, the Ext service, the Agent service,
-//!   the Events service and the Hooks service, and the payloads of the
-//!   adapter extensions. `prost` generates these types from the schemas in
+//!   the Events service, the Hooks service and the Workspace service, and
+//!   the payloads of the adapter extensions. `prost` generates these types from the schemas in
 //!   `proto/nomux/wire/v1/`.
 //! - [`frame`]: the fixed binary header of a terminal data frame and the
 //!   payload of the `End` frame.

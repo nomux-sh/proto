@@ -615,6 +615,8 @@ pub enum EventType {
     AgentRunRemoved = 2,
     /// `ExtensionEvent`.
     ExtensionEvent = 3,
+    /// `WorkspaceChanged`.
+    WorkspaceChanged = 4,
 }
 impl EventType {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -627,6 +629,7 @@ impl EventType {
             Self::AgentRunChanged => "EVENT_TYPE_AGENT_RUN_CHANGED",
             Self::AgentRunRemoved => "EVENT_TYPE_AGENT_RUN_REMOVED",
             Self::ExtensionEvent => "EVENT_TYPE_EXTENSION_EVENT",
+            Self::WorkspaceChanged => "EVENT_TYPE_WORKSPACE_CHANGED",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -636,6 +639,7 @@ impl EventType {
             "EVENT_TYPE_AGENT_RUN_CHANGED" => Some(Self::AgentRunChanged),
             "EVENT_TYPE_AGENT_RUN_REMOVED" => Some(Self::AgentRunRemoved),
             "EVENT_TYPE_EXTENSION_EVENT" => Some(Self::ExtensionEvent),
+            "EVENT_TYPE_WORKSPACE_CHANGED" => Some(Self::WorkspaceChanged),
             _ => None,
         }
     }
@@ -1554,6 +1558,263 @@ impl MemoryMeasure {
         }
     }
 }
+/// A Group: a node that holds Projects and Groups.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct WorkspaceGroup {}
+/// A Project: a node that names a directory on the Host.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct WorkspaceProject {
+    /// The directory of the Project: an absolute path on the Host, with each
+    /// symbolic link resolved. 1024 bytes at most. Two Projects never have the
+    /// same directory.
+    #[prost(string, tag = "1")]
+    pub directory: ::prost::alloc::string::String,
+}
+/// One node of the workspace tree: a Group or a Project.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct WorkspaceNode {
+    /// The node identifier: 1 to 32 characters from `A-Z`, `a-z`, `0-9`, `-`
+    /// and `_`. The daemon selects it. It does not change, and the daemon does
+    /// not use it again for a different node of the Host.
+    #[prost(string, tag = "1")]
+    pub id: ::prost::alloc::string::String,
+    /// The identifier of the Group that holds the node. Empty for a node at the
+    /// top level.
+    #[prost(string, tag = "2")]
+    pub parent_id: ::prost::alloc::string::String,
+    /// The name of the node: 1 to 128 bytes of UTF-8 without a control
+    /// character. Two nodes can have the same name.
+    #[prost(string, tag = "3")]
+    pub name: ::prost::alloc::string::String,
+    /// What the node is.
+    #[prost(oneof = "workspace_node::Kind", tags = "4, 5")]
+    pub kind: ::core::option::Option<workspace_node::Kind>,
+}
+/// Nested message and enum types in `WorkspaceNode`.
+pub mod workspace_node {
+    /// What the node is.
+    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
+    pub enum Kind {
+        /// The node is a Group.
+        #[prost(message, tag = "4")]
+        Group(super::WorkspaceGroup),
+        /// The node is a Project.
+        #[prost(message, tag = "5")]
+        Project(super::WorkspaceProject),
+    }
+}
+/// Workspace.Tree: asks for the workspace tree of the Host.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct WorkspaceTreeRequest {}
+/// The reply to `WorkspaceTreeRequest`.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct WorkspaceTreeResponse {
+    /// The revision of the tree. spec/workspace.md has the rule.
+    #[prost(uint64, tag = "1")]
+    pub revision: u64,
+    /// Each node of the tree, 800 at most. A node comes after its parent, and
+    /// the nodes with the same parent are in their sequence among the siblings:
+    /// the sequence of a depth-first walk of the tree.
+    #[prost(message, repeated, tag = "2")]
+    pub nodes: ::prost::alloc::vec::Vec<WorkspaceNode>,
+}
+/// Workspace.AddProject: adds a Project to the tree.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct WorkspaceAddProjectRequest {
+    /// The directory of the Project: an absolute path of a directory on the
+    /// Host, for example the root of a repository.
+    #[prost(string, tag = "1")]
+    pub directory: ::prost::alloc::string::String,
+    /// The name of the Project.
+    #[prost(string, tag = "2")]
+    pub name: ::prost::alloc::string::String,
+    /// The identifier of the Group for the Project. Empty for the top level.
+    #[prost(string, tag = "3")]
+    pub parent_id: ::prost::alloc::string::String,
+    /// The position of the Project among its siblings: 0 is the first. If the
+    /// field is absent or is not smaller than the number of siblings, the
+    /// Project is the last.
+    #[prost(uint32, optional, tag = "4")]
+    pub index: ::core::option::Option<u32>,
+}
+/// The reply to `WorkspaceAddProjectRequest`.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct WorkspaceAddProjectResponse {
+    /// The revision of the tree after the change.
+    #[prost(uint64, tag = "1")]
+    pub revision: u64,
+    /// The new node.
+    #[prost(message, optional, tag = "2")]
+    pub node: ::core::option::Option<WorkspaceNode>,
+}
+/// Workspace.RemoveProject: removes a Project from the tree. The daemon
+/// changes no file, Session or Worktree.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct WorkspaceRemoveProjectRequest {
+    /// The identifier of the Project.
+    #[prost(string, tag = "1")]
+    pub id: ::prost::alloc::string::String,
+}
+/// The reply to `WorkspaceRemoveProjectRequest`.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct WorkspaceRemoveProjectResponse {
+    /// The revision of the tree after the change.
+    #[prost(uint64, tag = "1")]
+    pub revision: u64,
+}
+/// Workspace.CreateGroup: adds an empty Group to the tree.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct WorkspaceCreateGroupRequest {
+    /// The name of the Group.
+    #[prost(string, tag = "1")]
+    pub name: ::prost::alloc::string::String,
+    /// The identifier of the Group for the new Group. Empty for the top level.
+    #[prost(string, tag = "2")]
+    pub parent_id: ::prost::alloc::string::String,
+    /// The position of the Group among its siblings, as in
+    /// `WorkspaceAddProjectRequest.index`.
+    #[prost(uint32, optional, tag = "3")]
+    pub index: ::core::option::Option<u32>,
+}
+/// The reply to `WorkspaceCreateGroupRequest`.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct WorkspaceCreateGroupResponse {
+    /// The revision of the tree after the change.
+    #[prost(uint64, tag = "1")]
+    pub revision: u64,
+    /// The new node.
+    #[prost(message, optional, tag = "2")]
+    pub node: ::core::option::Option<WorkspaceNode>,
+}
+/// Workspace.RemoveGroup: removes a Group from the tree. The content of the
+/// Group takes the place of the Group in its parent. No node is deleted.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct WorkspaceRemoveGroupRequest {
+    /// The identifier of the Group.
+    #[prost(string, tag = "1")]
+    pub id: ::prost::alloc::string::String,
+}
+/// The reply to `WorkspaceRemoveGroupRequest`.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct WorkspaceRemoveGroupResponse {
+    /// The revision of the tree after the change.
+    #[prost(uint64, tag = "1")]
+    pub revision: u64,
+}
+/// Workspace.Rename: changes the name of a Group or of a Project.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct WorkspaceRenameRequest {
+    /// The identifier of the node.
+    #[prost(string, tag = "1")]
+    pub id: ::prost::alloc::string::String,
+    /// The new name.
+    #[prost(string, tag = "2")]
+    pub name: ::prost::alloc::string::String,
+}
+/// The reply to `WorkspaceRenameRequest`.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct WorkspaceRenameResponse {
+    /// The revision of the tree after the change.
+    #[prost(uint64, tag = "1")]
+    pub revision: u64,
+}
+/// Workspace.Move: puts a Group or a Project in a different Group, at the
+/// top level, or at a different position among the same siblings.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct WorkspaceMoveRequest {
+    /// The identifier of the node.
+    #[prost(string, tag = "1")]
+    pub id: ::prost::alloc::string::String,
+    /// The identifier of the Group for the node. Empty for the top level. It
+    /// is not the node and not a Group below the node.
+    #[prost(string, tag = "2")]
+    pub parent_id: ::prost::alloc::string::String,
+    /// The position of the node among its new siblings, without the node
+    /// itself. If the field is absent or is not smaller than the number of
+    /// these siblings, the node is the last.
+    #[prost(uint32, optional, tag = "3")]
+    pub index: ::core::option::Option<u32>,
+}
+/// The reply to `WorkspaceMoveRequest`.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct WorkspaceMoveResponse {
+    /// The revision of the tree after the change.
+    #[prost(uint64, tag = "1")]
+    pub revision: u64,
+}
+/// A node came into the tree: `Workspace.AddProject` or
+/// `Workspace.CreateGroup`.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct WorkspaceNodeAdded {
+    /// The new node.
+    #[prost(message, optional, tag = "1")]
+    pub node: ::core::option::Option<WorkspaceNode>,
+    /// The position of the node among its siblings: 0 is the first.
+    #[prost(uint32, tag = "2")]
+    pub index: u32,
+}
+/// A node has a new name: `Workspace.Rename`.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct WorkspaceNodeRenamed {
+    /// The identifier of the node.
+    #[prost(string, tag = "1")]
+    pub id: ::prost::alloc::string::String,
+    /// The new name.
+    #[prost(string, tag = "2")]
+    pub name: ::prost::alloc::string::String,
+}
+/// A node has a new parent or a new position: `Workspace.Move`.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct WorkspaceNodeMoved {
+    /// The identifier of the node.
+    #[prost(string, tag = "1")]
+    pub id: ::prost::alloc::string::String,
+    /// The identifier of the new parent. Empty for the top level.
+    #[prost(string, tag = "2")]
+    pub parent_id: ::prost::alloc::string::String,
+    /// The new position of the node among its siblings: 0 is the first.
+    #[prost(uint32, tag = "3")]
+    pub index: u32,
+}
+/// A node went out of the tree: `Workspace.RemoveProject` or
+/// `Workspace.RemoveGroup`. The nodes in a removed Group take the place of
+/// the Group in its parent, in their sequence.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct WorkspaceNodeRemoved {
+    /// The identifier of the node.
+    #[prost(string, tag = "1")]
+    pub id: ::prost::alloc::string::String,
+}
+/// Event: the workspace tree changed. Each request that changes the tree
+/// makes one event.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct WorkspaceChanged {
+    /// The revision of the tree after the change.
+    #[prost(uint64, tag = "1")]
+    pub revision: u64,
+    /// The change.
+    #[prost(oneof = "workspace_changed::Change", tags = "2, 3, 4, 5")]
+    pub change: ::core::option::Option<workspace_changed::Change>,
+}
+/// Nested message and enum types in `WorkspaceChanged`.
+pub mod workspace_changed {
+    /// The change.
+    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
+    pub enum Change {
+        /// A node came into the tree.
+        #[prost(message, tag = "2")]
+        Added(super::WorkspaceNodeAdded),
+        /// A node has a new name.
+        #[prost(message, tag = "3")]
+        Renamed(super::WorkspaceNodeRenamed),
+        /// A node has a new parent or a new position.
+        #[prost(message, tag = "4")]
+        Moved(super::WorkspaceNodeMoved),
+        /// A node went out of the tree.
+        #[prost(message, tag = "5")]
+        Removed(super::WorkspaceNodeRemoved),
+    }
+}
 /// The failure result of a request.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Error {
@@ -1577,7 +1838,7 @@ pub struct Request {
     /// number plan at the top of this file.
     #[prost(
         oneof = "request::Body",
-        tags = "100, 200, 201, 300, 301, 302, 303, 304, 305, 306, 307, 308, 309, 310, 400, 401, 402, 403, 404, 405, 500, 501, 502, 600, 700, 701, 702"
+        tags = "100, 200, 201, 300, 301, 302, 303, 304, 305, 306, 307, 308, 309, 310, 400, 401, 402, 403, 404, 405, 500, 501, 502, 600, 700, 701, 702, 800, 801, 802, 803, 804, 805, 806"
     )]
     pub body: ::core::option::Option<request::Body>,
 }
@@ -1668,6 +1929,27 @@ pub mod request {
         /// Hooks.Adapters.
         #[prost(message, tag = "702")]
         HooksAdapters(super::HooksAdaptersRequest),
+        /// Workspace.Tree.
+        #[prost(message, tag = "800")]
+        WorkspaceTree(super::WorkspaceTreeRequest),
+        /// Workspace.AddProject.
+        #[prost(message, tag = "801")]
+        WorkspaceAddProject(super::WorkspaceAddProjectRequest),
+        /// Workspace.RemoveProject.
+        #[prost(message, tag = "802")]
+        WorkspaceRemoveProject(super::WorkspaceRemoveProjectRequest),
+        /// Workspace.CreateGroup.
+        #[prost(message, tag = "803")]
+        WorkspaceCreateGroup(super::WorkspaceCreateGroupRequest),
+        /// Workspace.RemoveGroup.
+        #[prost(message, tag = "804")]
+        WorkspaceRemoveGroup(super::WorkspaceRemoveGroupRequest),
+        /// Workspace.Rename.
+        #[prost(message, tag = "805")]
+        WorkspaceRename(super::WorkspaceRenameRequest),
+        /// Workspace.Move.
+        #[prost(message, tag = "806")]
+        WorkspaceMove(super::WorkspaceMoveRequest),
     }
 }
 /// The response from the daemon to one request.
@@ -1680,7 +1962,7 @@ pub struct Response {
     /// the field number plan at the top of this file.
     #[prost(
         oneof = "response::Result",
-        tags = "2, 100, 200, 201, 300, 301, 302, 303, 304, 305, 306, 307, 308, 309, 310, 400, 401, 402, 403, 404, 405, 500, 501, 502, 600, 700, 701, 702"
+        tags = "2, 100, 200, 201, 300, 301, 302, 303, 304, 305, 306, 307, 308, 309, 310, 400, 401, 402, 403, 404, 405, 500, 501, 502, 600, 700, 701, 702, 800, 801, 802, 803, 804, 805, 806"
     )]
     pub result: ::core::option::Option<response::Result>,
 }
@@ -1776,6 +2058,27 @@ pub mod response {
         /// Hooks.Adapters.
         #[prost(message, tag = "702")]
         HooksAdapters(super::HooksAdaptersResponse),
+        /// Workspace.Tree.
+        #[prost(message, tag = "800")]
+        WorkspaceTree(super::WorkspaceTreeResponse),
+        /// Workspace.AddProject.
+        #[prost(message, tag = "801")]
+        WorkspaceAddProject(super::WorkspaceAddProjectResponse),
+        /// Workspace.RemoveProject.
+        #[prost(message, tag = "802")]
+        WorkspaceRemoveProject(super::WorkspaceRemoveProjectResponse),
+        /// Workspace.CreateGroup.
+        #[prost(message, tag = "803")]
+        WorkspaceCreateGroup(super::WorkspaceCreateGroupResponse),
+        /// Workspace.RemoveGroup.
+        #[prost(message, tag = "804")]
+        WorkspaceRemoveGroup(super::WorkspaceRemoveGroupResponse),
+        /// Workspace.Rename.
+        #[prost(message, tag = "805")]
+        WorkspaceRename(super::WorkspaceRenameResponse),
+        /// Workspace.Move.
+        #[prost(message, tag = "806")]
+        WorkspaceMove(super::WorkspaceMoveResponse),
     }
 }
 /// A message from the daemon that no request asked for. The daemon sends
@@ -1793,7 +2096,7 @@ pub struct Event {
     /// What occurred. A client ignores an event whose body it does not know.
     /// Each service adds its events here, with numbers of its block of the
     /// field number plan at the top of this file.
-    #[prost(oneof = "event::Body", tags = "400, 500, 501, 600")]
+    #[prost(oneof = "event::Body", tags = "400, 500, 501, 600, 800")]
     pub body: ::core::option::Option<event::Body>,
 }
 /// Nested message and enum types in `Event`.
@@ -1816,6 +2119,9 @@ pub mod event {
         /// for. The state of the Host now follows.
         #[prost(message, tag = "600")]
         Snapshot(super::EventsSnapshot),
+        /// Workspace: the workspace tree changed.
+        #[prost(message, tag = "800")]
+        WorkspaceChanged(super::WorkspaceChanged),
     }
 }
 /// One message on the control channel.

@@ -22,7 +22,8 @@
 //   500 to 599   Agent service.
 //   600 to 699   Events service.
 //   700 to 799   Hooks service.
-//   800 and up   Not assigned. Each new service takes the next free block of
+//   800 to 899   Workspace service.
+//   900 and up   Not assigned. Each new service takes the next free block of
 //                100 numbers.
 //
 // A request and its response use the same field number where possible. An
@@ -42,6 +43,7 @@ import "nomux/wire/v1/handshake.proto";
 import "nomux/wire/v1/hooks.proto";
 import "nomux/wire/v1/host.proto";
 import "nomux/wire/v1/session.proto";
+import "nomux/wire/v1/workspace.proto";
 
 // The reason for a failed request.
 //
@@ -136,6 +138,20 @@ message Request {
     HooksPlanRequest hooks_plan = 701;
     // Hooks.Adapters.
     HooksAdaptersRequest hooks_adapters = 702;
+    // Workspace.Tree.
+    WorkspaceTreeRequest workspace_tree = 800;
+    // Workspace.AddProject.
+    WorkspaceAddProjectRequest workspace_add_project = 801;
+    // Workspace.RemoveProject.
+    WorkspaceRemoveProjectRequest workspace_remove_project = 802;
+    // Workspace.CreateGroup.
+    WorkspaceCreateGroupRequest workspace_create_group = 803;
+    // Workspace.RemoveGroup.
+    WorkspaceRemoveGroupRequest workspace_remove_group = 804;
+    // Workspace.Rename.
+    WorkspaceRenameRequest workspace_rename = 805;
+    // Workspace.Move.
+    WorkspaceMoveRequest workspace_move = 806;
   }
 }
 
@@ -204,6 +220,20 @@ message Response {
     HooksPlanResponse hooks_plan = 701;
     // Hooks.Adapters.
     HooksAdaptersResponse hooks_adapters = 702;
+    // Workspace.Tree.
+    WorkspaceTreeResponse workspace_tree = 800;
+    // Workspace.AddProject.
+    WorkspaceAddProjectResponse workspace_add_project = 801;
+    // Workspace.RemoveProject.
+    WorkspaceRemoveProjectResponse workspace_remove_project = 802;
+    // Workspace.CreateGroup.
+    WorkspaceCreateGroupResponse workspace_create_group = 803;
+    // Workspace.RemoveGroup.
+    WorkspaceRemoveGroupResponse workspace_remove_group = 804;
+    // Workspace.Rename.
+    WorkspaceRenameResponse workspace_rename = 805;
+    // Workspace.Move.
+    WorkspaceMoveResponse workspace_move = 806;
   }
 }
 
@@ -229,6 +259,8 @@ message Event {
     // Events: the daemon does not have the events that the client asked
     // for. The state of the Host now follows.
     EventsSnapshot snapshot = 600;
+    // Workspace: the workspace tree changed.
+    WorkspaceChanged workspace_changed = 800;
   }
 }
 

@@ -53,6 +53,7 @@ Each service has its own block of 100 field numbers in `Request.body` and in `Re
 | Agent | 500 to 599 | `agent.proto` |
 | Events | 600 to 699 | `events.proto` |
 | Hooks | 700 to 799 | `hooks.proto` |
+| Workspace | 800 to 899 | `workspace.proto` |
 
 An event of a service has a field number of the block of that service in `Event.body`.
 
@@ -368,7 +369,7 @@ The Events service gives a client the changes on a Host as a stream of `Event` m
 - Each event has a sequence number `seq`. The first event of a daemon has the number 1, and each event has the number after the event before it. The numbers start again when the daemon starts again.
 - The daemon keeps the last events in memory, with a limit of their number and of their bytes: 1024 events, or fewer when the events are large. An event has the Agent run of a Session, and a program in the Session decides its size. A client that connects again sends the `seq` after the last one that it has as `from_seq`, and it gets each event from there on, one time, if the daemon still has that event.
 - With `from_seq` 0, the client gets only the events after the request.
-- If the daemon does not have the event `from_seq` any more, or if `from_seq` is larger than the number after the newest event (the daemon started again), the client gets a snapshot: one `EventsSnapshot` event, then one `AgentRunChanged` event for each Session that is not ended and for each kept run, and then the events that follow. The events of a snapshot have the `seq` of the newest event at that time. A client that gets an `EventsSnapshot` discards the state that it has.
+- If the daemon does not have the event `from_seq` any more, or if `from_seq` is larger than the number after the newest event (the daemon started again), the client gets a snapshot: one `EventsSnapshot` event, then one `AgentRunChanged` event for each Session that is not ended and for each kept run, and then the events that follow. The events of a snapshot have the `seq` of the newest event at that time. A client that gets an `EventsSnapshot` discards the state that it has. A snapshot has no workspace tree: the client sends `Workspace.Tree` again.
 - A client that is slow gets the events later. If it is too far behind, it gets a snapshot as above. The daemon keeps no queue for one client.
 - With `types`, the client gets only the events of these types. The filter does not apply to `EventsSnapshot`.
 
@@ -378,6 +379,7 @@ The Events service gives a client the changes on a Host as a stream of `Event` m
 | 400 | `ExtensionEvent` | `EVENT_TYPE_EXTENSION_EVENT` | The daemon part of an extension sent an event. The daemon drops an event whose payload is larger than 65536 bytes. |
 | 501 | `AgentRunRemoved` | `EVENT_TYPE_AGENT_RUN_REMOVED` | The Session has no Agent run any more: it ended without a kept run, the daemon removed its kept run, or the Session was removed. |
 | 600 | `EventsSnapshot` | none | The state of the Host follows. |
+| 800 | `WorkspaceChanged` | `EVENT_TYPE_WORKSPACE_CHANGED` | The workspace tree changed. The event has the new revision and one change. [workspace.md](workspace.md#event) has the changes. |
 
 A client ignores an event whose body it does not know.
 
@@ -409,6 +411,20 @@ Errors of the Hooks service:
 | `HooksPlanRequest` | No tool with this name has an adapter. | `ERROR_CODE_NOT_FOUND` |
 | `HooksPlanRequest` | The adapter did not answer, answered with an error, or answered with a payload that is not a `HookInstallPlan`. | `ERROR_CODE_FAILED`, or `ERROR_CODE_TIMEOUT` if it did not answer in time |
 
+### Workspace
+
+The Workspace service gives and changes the workspace tree of the Host: the Groups and the Projects, and their sequence. [workspace.md](workspace.md) specifies the tree, the revision, the relation between a Project and its Sessions, the errors, the event, the limits and examples.
+
+| Field number | Method | Request | Response | Function |
+|-------------:|--------|---------|----------|----------|
+| 800 | `Workspace.Tree` | `WorkspaceTreeRequest` | `WorkspaceTreeResponse` | Gives each node of the tree and the revision. |
+| 801 | `Workspace.AddProject` | `WorkspaceAddProjectRequest` | `WorkspaceAddProjectResponse` | Adds a Project. |
+| 802 | `Workspace.RemoveProject` | `WorkspaceRemoveProjectRequest` | `WorkspaceRemoveProjectResponse` | Removes a Project from the tree. No file, Session or Worktree changes. |
+| 803 | `Workspace.CreateGroup` | `WorkspaceCreateGroupRequest` | `WorkspaceCreateGroupResponse` | Adds an empty Group. |
+| 804 | `Workspace.RemoveGroup` | `WorkspaceRemoveGroupRequest` | `WorkspaceRemoveGroupResponse` | Removes a Group. Its content takes its place. |
+| 805 | `Workspace.Rename` | `WorkspaceRenameRequest` | `WorkspaceRenameResponse` | Gives a Group or a Project a new name. |
+| 806 | `Workspace.Move` | `WorkspaceMoveRequest` | `WorkspaceMoveResponse` | Puts a Group or a Project in a different place in the tree. |
+
 ## Open items
 
 These items are not decided. The [roadmap](https://github.com/nomux-sh/docs/blob/main/src/content/docs/project/roadmap.md) gives the plan.
@@ -417,7 +433,7 @@ These items are not decided. The [roadmap](https://github.com/nomux-sh/docs/blob
 - A request that detaches one client and not all the clients of a Session.
 - A request that removes an ended Session before its retention time is over, and a request that starts the command of an ended Session again.
 - The name of the environment profile of a Session.
-- The other services: Project, Worktree, Team and Task.
+- The other services: Worktree, Team and Task. [workspace.md](workspace.md#open-items) has the open items of the workspace tree.
 - Agent: more than one Agent run in a Session, the kind of a Child work (subagent, teammate, background task), and a self-report for a Child work.
 - Events: a request that marks a Session as seen without an attach, the events of the other services, and an event log that stays after a restart of the daemon.
 - Ext: the installation of an extension from a registry, the update of an extension, and events from the daemon to an extension.

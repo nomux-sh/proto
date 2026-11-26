@@ -42,7 +42,7 @@ A Session relates to a Project by its working directory. No message of the Sessi
 
 The working directory of a Session and its resolved path do not change, thus the Project of a Session changes only when the tree changes: after `Workspace.AddProject` and `Workspace.RemoveProject`. A Group has no Session of its own: the Sessions of a Group are the Sessions of the Projects in it and in each Group below it.
 
-A Worktree of a Project is a git worktree of the repository of the Project. A Worktree whose directory is below the directory of its Project relates to the Project by the same rule. A Worktree in a different place has no Project in this version: see [Open items](#open-items).
+A Worktree of a Project is a git worktree of the repository of the Project, wherever its directory is: the repository decides, not the path. [worktree.md](worktree.md) specifies the Worktree service.
 
 ## Status
 
@@ -221,6 +221,5 @@ The tree at revision 14. No Project and no Group except `g2` went away:
 These items are not decided. The [roadmap](https://github.com/nomux-sh/docs/blob/main/src/content/docs/project/roadmap.md) gives the plan.
 
 - The default agent and the color of a Project.
-- A Worktree whose directory is not below the directory of its Project. The Worktree service relates it to its Project.
 - A field of `Session` with the Project, if a client cannot compute it from the working directory.
 - A request that adds or moves more than one node in one change.

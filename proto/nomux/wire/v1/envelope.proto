@@ -23,7 +23,8 @@
 //   600 to 699   Events service.
 //   700 to 799   Hooks service.
 //   800 to 899   Workspace service.
-//   900 and up   Not assigned. Each new service takes the next free block of
+//   900 to 999   Worktree service.
+//   1000 and up  Not assigned. Each new service takes the next free block of
 //                100 numbers.
 //
 // A request and its response use the same field number where possible. An
@@ -44,6 +45,7 @@ import "nomux/wire/v1/hooks.proto";
 import "nomux/wire/v1/host.proto";
 import "nomux/wire/v1/session.proto";
 import "nomux/wire/v1/workspace.proto";
+import "nomux/wire/v1/worktree.proto";
 
 // The reason for a failed request.
 //
@@ -158,6 +160,8 @@ message Request {
     WorkspaceRenameRequest workspace_rename = 805;
     // Workspace.Move.
     WorkspaceMoveRequest workspace_move = 806;
+    // Worktree.List.
+    WorktreeListRequest worktree_list = 900;
   }
 }
 
@@ -246,6 +250,8 @@ message Response {
     WorkspaceRenameResponse workspace_rename = 805;
     // Workspace.Move.
     WorkspaceMoveResponse workspace_move = 806;
+    // Worktree.List.
+    WorktreeListResponse worktree_list = 900;
   }
 }
 

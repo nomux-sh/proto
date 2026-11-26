@@ -1,0 +1,242 @@
+// Worktree service of the nomux control protocol: the git worktrees of the
+// Projects of a Host, with their state, their size and the reason why each
+// one can or cannot be removed.
+//
+// The requests and the responses are fields of `Request.body` and
+// `Response.result` (see envelope.proto). The Worktree service has the field
+// numbers 900 to 999 there.
+//
+// spec/worktree.md has the model, the rules of the states and the flags, and
+// the sizes.
+//
+// STATUS: DRAFT. The messages can change in a minor version until version
+// 1.0.0.
+
+syntax = "proto3";
+
+package nomux.wire.v1;
+
+// The state of a Worktree. A Worktree has one state.
+enum WorktreeState {
+  // Not a state. A client shows the Worktree without a state.
+  WORKTREE_STATE_UNSPECIFIED = 0;
+  // A Session that is not ended has its working directory in the Worktree.
+  WORKTREE_STATE_ACTIVE = 1;
+  // Not active, and the branch of the Worktree is merged into the base
+  // branch: see `WorktreeMergedBy`.
+  WORKTREE_STATE_FINISHED = 2;
+  // Not active, not finished, and no activity for the stale time.
+  WORKTREE_STATE_STALE = 3;
+  // Each other Worktree.
+  WORKTREE_STATE_IDLE = 4;
+}
+
+// A fact of a Worktree. The flags are independent of the state.
+enum WorktreeFlag {
+  // Not a flag. A client ignores it.
+  WORKTREE_FLAG_UNSPECIFIED = 0;
+  // The Worktree has a staged, unstaged or untracked file that is not
+  // ignored, a conflict, or a merge, rebase, cherry-pick, revert or bisect
+  // in progress.
+  WORKTREE_FLAG_DIRTY = 1;
+  // `HEAD` has a commit that no remote-tracking branch has. Without a remote,
+  // a commit that the base branch does not have.
+  WORKTREE_FLAG_UNPUSHED = 2;
+  // `HEAD` is detached and has a commit that no branch and no
+  // remote-tracking branch has.
+  WORKTREE_FLAG_DETACHED_COMMITS = 3;
+  // The Worktree is locked (`git worktree lock`).
+  WORKTREE_FLAG_LOCKED = 4;
+  // The Worktree has a `.gitmodules` file.
+  WORKTREE_FLAG_SUBMODULE = 5;
+  // The Worktree has ignored paths that are not build output: for example
+  // `.env` or a local database.
+  WORKTREE_FLAG_IGNORED_USER_FILES = 6;
+  // A process of the Host has its current directory in the Worktree.
+  WORKTREE_FLAG_BUSY = 7;
+  // The directory of the Worktree does not exist. git calls the Worktree
+  // prunable.
+  WORKTREE_FLAG_MISSING = 8;
+  // The directory of the Worktree is on a different file system than its
+  // parent directory, or it is a mount point.
+  WORKTREE_FLAG_OTHER_FILE_SYSTEM = 9;
+  // The upstream branch of the branch is configured, and its
+  // remote-tracking branch does not exist: a fetch with prune removed it.
+  WORKTREE_FLAG_UPSTREAM_GONE = 10;
+}
+
+// The rule that found the branch of a Worktree merged into the base branch.
+// The extension that reads the repository applies the rules in this
+// sequence and gives the first that matches.
+enum WorktreeMergedBy {
+  // No rule matches: the branch is not merged, or the facts are not known.
+  WORKTREE_MERGED_BY_UNSPECIFIED = 0;
+  // The base branch has the commit of `HEAD` (`git branch --merged`).
+  WORKTREE_MERGED_BY_ANCESTOR = 1;
+  // A merge of `HEAD` into the base branch changes nothing: the base branch
+  // has each change of the branch. This finds a rebase merge, and a squash
+  // merge without a later change of the same lines.
+  WORKTREE_MERGED_BY_TREE = 2;
+  // The upstream branch is gone (`WORKTREE_FLAG_UPSTREAM_GONE`). A forge
+  // deletes the branch of a merged pull request, but also a person can
+  // delete a branch that is not merged.
+  WORKTREE_MERGED_BY_UPSTREAM_GONE = 3;
+}
+
+// Why a removal of the directory of a Worktree is refused. The removal
+// keeps the branch. This version of the protocol removes nothing: the
+// reasons tell the user what a removal would lose.
+enum WorktreeRefusal {
+  // Not a reason. A client ignores it.
+  WORKTREE_REFUSAL_UNSPECIFIED = 0;
+  // The Worktree is the main worktree of the repository.
+  WORKTREE_REFUSAL_MAIN_WORKTREE = 1;
+  // The directory does not exist. Only a prune of the record of git applies.
+  WORKTREE_REFUSAL_DIRECTORY_MISSING = 2;
+  // A Session that is not ended is in the Worktree.
+  WORKTREE_REFUSAL_ACTIVE_SESSION = 3;
+  // A process has its current directory in the Worktree.
+  WORKTREE_REFUSAL_PROCESS_RUNNING = 4;
+  // The Worktree has changes that are not committed.
+  WORKTREE_REFUSAL_UNCOMMITTED_CHANGES = 5;
+  // `HEAD` has commits that are not pushed.
+  WORKTREE_REFUSAL_UNPUSHED_COMMITS = 6;
+  // `HEAD` is detached and has commits that no branch has.
+  WORKTREE_REFUSAL_DETACHED_COMMITS = 7;
+  // The Worktree is locked. nomux never removes a lock that it did not set.
+  WORKTREE_REFUSAL_LOCKED = 8;
+  // The Worktree has a submodule. git refuses to move or remove it.
+  WORKTREE_REFUSAL_SUBMODULE = 9;
+  // The Worktree has ignored files that are not build output.
+  WORKTREE_REFUSAL_IGNORED_USER_FILES = 10;
+  // The Worktree is on a different file system than its parent directory.
+  WORKTREE_REFUSAL_OTHER_FILE_SYSTEM = 11;
+  // The Worktree is not finished.
+  WORKTREE_REFUSAL_NOT_FINISHED = 12;
+  // The facts of the Worktree are not known: see
+  // `WorktreeInfo.facts_unavailable_reason`.
+  WORKTREE_REFUSAL_FACTS_UNKNOWN = 13;
+}
+
+// The size of a Worktree as the daemon measured it.
+message WorktreeSize {
+  // The allocated bytes of each file and directory below the directory of
+  // the Worktree. A hard link counts one time in a walk of a Project. A
+  // nested Worktree is not in the sum: it has its own size.
+  uint64 total_bytes = 1;
+  // The part of `total_bytes` in build output directories.
+  uint64 build_output_bytes = 2;
+  // When the walk ended: milliseconds after the Unix epoch.
+  uint64 measured_at_ms = 3;
+  // True when the size is older than the size lifetime, or an event made it
+  // old. The daemon measures it again: `WorktreeListRequest.wait_for_sizes`.
+  bool is_old = 4;
+  // Each build output directory of the Worktree with its size, the largest
+  // first. Their sum is `build_output_bytes`.
+  repeated BuildOutputSize build_outputs = 5;
+}
+
+// The size of one build output directory of a Worktree.
+message BuildOutputSize {
+  // The path of the directory, relative to the directory of the Worktree.
+  string path = 1;
+  // The identifier of the build-output rule that accepted the directory,
+  // for example `cargo-target` or `node-modules`. The rules are data of the
+  // daemon: a client that does not know an identifier shows it as it is.
+  string rule = 2;
+  // The allocated bytes below the directory, counted as for
+  // `WorktreeSize.total_bytes`.
+  uint64 bytes = 3;
+}
+
+// One Worktree of a Project.
+message WorktreeInfo {
+  // The absolute path of the directory of the Worktree, with its symbolic
+  // links resolved.
+  string path = 1;
+  // The short name of the branch. Empty when `HEAD` is detached, and for a
+  // bare repository.
+  string branch = 2;
+  // The commit of `HEAD` as a hexadecimal object ID. Empty for a bare
+  // repository and before the first commit.
+  string head = 3;
+  // True for the main worktree of the repository.
+  bool is_main = 4;
+  // True for the entry of a bare repository. It has no directory to
+  // measure and is never removed.
+  bool is_bare = 5;
+  // The state.
+  WorktreeState state = 6;
+  // The flags, each one time, in the sequence of their values.
+  repeated WorktreeFlag flags = 7;
+  // The identifiers of the Sessions that are not ended whose working
+  // directory is in the Worktree. A Session belongs to the Worktree with the
+  // longest directory that contains its working directory.
+  repeated string session_ids = 8;
+  // The size. Absent when the daemon did not measure the Worktree yet.
+  WorktreeSize size = 9;
+  // The last activity in the Worktree: the newest change of its `HEAD`, its
+  // index and its log of `HEAD`. Milliseconds after the Unix epoch. 0 when
+  // not known.
+  uint64 last_activity_at_ms = 10;
+  // The rule that found the branch merged.
+  WorktreeMergedBy merged_by = 11;
+  // The number of commits that are not pushed (`WORKTREE_FLAG_UNPUSHED`).
+  // The count stops at 1000.
+  uint32 unpushed_commits = 12;
+  // Why a removal of the directory is refused, the most important reason
+  // first. Empty when a removal is allowed: the Worktree is finished and a
+  // removal loses no work.
+  repeated WorktreeRefusal refusals = 13;
+  // The ignored paths that are not build output, relative to the directory
+  // of the Worktree. A directory ends with `/`. 32 paths at most.
+  repeated string ignored_user_paths = 14;
+  // The reason of the lock. Empty when the Worktree is not locked, or when
+  // the lock has no reason.
+  string locked_reason = 15;
+  // Why the daemon does not know the git facts of this Worktree, as English
+  // text for the user. Empty when it knows them.
+  string facts_unavailable_reason = 16;
+}
+
+// The Worktrees of one Project.
+message ProjectWorktrees {
+  // The identifier of the Project.
+  string project_id = 1;
+  // Why the daemon has no Worktree of the Project, as English text for the
+  // user: for example the git extension is not installed, or its approved
+  // directories do not contain the directory of the Project. Empty when the
+  // daemon has the Worktrees.
+  string unavailable_reason = 2;
+  // The base branch of the merge rules, for example `origin/main`. Empty
+  // when the repository has no base branch.
+  string base_branch = 3;
+  // The time of the last fetch of the repository: milliseconds after the
+  // Unix epoch. 0 when the repository was never fetched. nomux never
+  // fetches.
+  uint64 last_fetch_at_ms = 4;
+  // The free bytes of the file system of the directory of the Project for a
+  // user without special rights. 0 when not known.
+  uint64 free_bytes = 5;
+  // The size of that file system in bytes. 0 when not known.
+  uint64 file_system_bytes = 6;
+  // The main worktree first, then the linked Worktrees.
+  repeated WorktreeInfo worktrees = 7;
+}
+
+// Worktree.List: asks for the Worktrees of one Project or of each Project.
+message WorktreeListRequest {
+  // The identifier of a Project. Empty for each Project of the workspace
+  // tree.
+  string project_id = 1;
+  // True: the daemon measures each size that is absent or old before it
+  // answers. False: the response has the sizes that the daemon has, and the
+  // daemon measures the absent and old sizes after the response.
+  bool wait_for_sizes = 2;
+}
+
+// The reply to `WorktreeListRequest`.
+message WorktreeListResponse {
+  // The Projects in the sequence of the workspace tree.
+  repeated ProjectWorktrees projects = 1;
+}

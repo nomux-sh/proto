@@ -54,6 +54,7 @@ Each service has its own block of 100 field numbers in `Request.body` and in `Re
 | Events | 600 to 699 | `events.proto` |
 | Hooks | 700 to 799 | `hooks.proto` |
 | Workspace | 800 to 899 | `workspace.proto` |
+| Worktree | 900 to 999 | `worktree.proto` |
 
 An event of a service has a field number of the block of that service in `Event.body`.
 
@@ -502,6 +503,14 @@ The Workspace service gives and changes the workspace tree of the Host: the Grou
 | 805 | `Workspace.Rename` | `WorkspaceRenameRequest` | `WorkspaceRenameResponse` | Gives a Group or a Project a new name. |
 | 806 | `Workspace.Move` | `WorkspaceMoveRequest` | `WorkspaceMoveResponse` | Puts a Group or a Project in a different place in the tree. |
 
+### Worktree
+
+The Worktree service gives the git worktrees of the Projects of the Host: their state, their flags, their size and the reasons why a removal of each one is refused. It only reads. [worktree.md](worktree.md) specifies the states, the flags, the merge rules, the sizes, the errors and the method `worktree_facts` of the git extension that gives the git facts.
+
+| Field number | Method | Request | Response | Function |
+|-------------:|--------|---------|----------|----------|
+| 900 | `Worktree.List` | `WorktreeListRequest` | `WorktreeListResponse` | Gives the Worktrees of one Project or of each Project. |
+
 ## Open items
 
 These items are not decided. The [roadmap](https://github.com/nomux-sh/docs/blob/main/src/content/docs/project/roadmap.md) gives the plan.
@@ -510,7 +519,7 @@ These items are not decided. The [roadmap](https://github.com/nomux-sh/docs/blob
 - A request that detaches one client and not all the clients of a Session.
 - A request that removes an ended Session before its retention time is over, and a request that starts the command of an ended Session again.
 - The name of the environment profile of a Session.
-- The other services: Worktree, Team and Task. [workspace.md](workspace.md#open-items) has the open items of the workspace tree.
+- The other services: Team and Task. Worktree: the removal of a Worktree, its events and the events of the free space of a disk. [workspace.md](workspace.md#open-items) has the open items of the workspace tree.
 - Agent: more than one Agent run in a Session, the kind of a Child work (subagent, teammate, background task), and a self-report for a Child work.
 - Events: a request that marks a Session as seen without an attach, the events of the other services, and an event log that stays after a restart of the daemon.
 - Ext: the installation of an extension from a registry, the update of an extension, and events from the daemon to an extension.

@@ -1,0 +1,90 @@
+// The payloads between the daemon and the git extension (`nomux.git`): the
+// git facts of the Worktrees of one repository.
+//
+// These messages are not fields of an `Envelope`. They are the argument and
+// the result of the method `worktree_facts` of the extension.
+// spec/worktree.md has the method and the rules of each fact.
+//
+// STATUS: DRAFT. The messages can change in a minor version until version
+// 1.0.0.
+
+syntax = "proto3";
+
+package nomux.wire.v1;
+
+import "nomux/wire/v1/worktree.proto";
+
+// The argument of the method `worktree_facts`.
+message WorktreeFactsRequest {
+  // The absolute path of a worktree of the repository: the directory of a
+  // Project.
+  string repository = 1;
+}
+
+// The result of the method `worktree_facts`.
+message WorktreeFactsResponse {
+  // The base branch of the merge rules as a short name, for example
+  // `origin/main`: the branch that `refs/remotes/origin/HEAD` names, else
+  // `main`, else `master`, as a remote-tracking branch of `origin` if it
+  // exists, else as a local branch. Empty when the repository has none.
+  string base_branch = 1;
+  // The modification time of `FETCH_HEAD` in the common git directory:
+  // milliseconds after the Unix epoch. 0 when the file does not exist.
+  uint64 last_fetch_at_ms = 2;
+  // The main worktree first, then the linked worktrees.
+  repeated WorktreeFacts worktrees = 3;
+}
+
+// The git facts of one worktree.
+message WorktreeFacts {
+  // The absolute path of the directory of the worktree, with its symbolic
+  // links resolved if the directory exists.
+  string path = 1;
+  // The short name of the branch. Empty when `HEAD` is detached, and for a
+  // bare repository.
+  string branch = 2;
+  // The commit of `HEAD` as a hexadecimal object ID. Empty for a bare
+  // repository and before the first commit.
+  string head = 3;
+  // True for the main worktree.
+  bool is_main = 4;
+  // True for the entry of a bare repository.
+  bool is_bare = 5;
+  // True when the worktree is locked.
+  bool is_locked = 6;
+  // The reason of the lock. Empty without a reason.
+  string locked_reason = 7;
+  // True when the directory of the worktree does not exist.
+  bool is_missing = 8;
+  // True when the worktree has a `.gitmodules` file.
+  bool has_submodules = 9;
+  // The newest modification time of `HEAD`, `index` and `logs/HEAD` in the
+  // git directory of the worktree: milliseconds after the Unix epoch.
+  uint64 last_activity_at_ms = 10;
+  // Why the extension has no other fact of this worktree, as English text
+  // for the user: for example its directory is not in an approved
+  // directory. Empty when the fields below are facts. The fields above are
+  // facts in each case.
+  string error = 11;
+  // True when the worktree has a staged, unstaged or untracked file that
+  // is not ignored, a conflict, or an operation in progress.
+  bool is_dirty = 12;
+  // The commits of `HEAD` that no remote-tracking branch has; without a
+  // remote-tracking branch, the commits that the base branch does not have;
+  // without both, each commit. The count stops at 1000.
+  uint32 unpushed_commits = 13;
+  // True when `HEAD` is detached and has a commit that no branch and no
+  // remote-tracking branch has.
+  bool has_detached_commits = 14;
+  // True when the branch has an upstream branch in its configuration, and
+  // the remote-tracking branch of it does not exist.
+  bool upstream_gone = 15;
+  // The first merge rule that matches the branch.
+  WorktreeMergedBy merged_by = 16;
+  // The ignored paths, relative to the directory of the worktree: a
+  // directory whose content is all ignored is one path that ends with `/`.
+  // 256 paths at most.
+  repeated string ignored_paths = 17;
+  // True when the worktree has more ignored paths than `ignored_paths`.
+  bool ignored_paths_truncated = 18;
+}

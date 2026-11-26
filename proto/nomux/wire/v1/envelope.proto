@@ -162,6 +162,18 @@ message Request {
     WorkspaceMoveRequest workspace_move = 806;
     // Worktree.List.
     WorktreeListRequest worktree_list = 900;
+    // Worktree.Plan.
+    WorktreePlanRequest worktree_plan = 901;
+    // Worktree.Clean.
+    WorktreeCleanRequest worktree_clean = 902;
+    // Worktree.Mark.
+    WorktreeMarkRequest worktree_mark = 903;
+    // Worktree.Trash.
+    WorktreeTrashRequest worktree_trash = 904;
+    // Worktree.Restore.
+    WorktreeRestoreRequest worktree_restore = 905;
+    // Worktree.EmptyTrash.
+    WorktreeEmptyTrashRequest worktree_empty_trash = 906;
   }
 }
 
@@ -252,6 +264,18 @@ message Response {
     WorkspaceMoveResponse workspace_move = 806;
     // Worktree.List.
     WorktreeListResponse worktree_list = 900;
+    // Worktree.Plan.
+    WorktreePlanResponse worktree_plan = 901;
+    // Worktree.Clean.
+    WorktreeCleanResponse worktree_clean = 902;
+    // Worktree.Mark.
+    WorktreeMarkResponse worktree_mark = 903;
+    // Worktree.Trash.
+    WorktreeTrashResponse worktree_trash = 904;
+    // Worktree.Restore.
+    WorktreeRestoreResponse worktree_restore = 905;
+    // Worktree.EmptyTrash.
+    WorktreeEmptyTrashResponse worktree_empty_trash = 906;
   }
 }
 
@@ -287,6 +311,12 @@ message Event {
     EventsSnapshot snapshot = 600;
     // Workspace: the workspace tree changed.
     WorkspaceChanged workspace_changed = 800;
+    // Worktree: a clean, a restore, the end of a grace time or a mark
+    // changed a Worktree.
+    WorktreeChanged worktree_changed = 900;
+    // Worktree: the free space of a file system with Worktrees went to a
+    // different level.
+    WorktreeDiskPressure worktree_disk_pressure = 901;
   }
 }
 

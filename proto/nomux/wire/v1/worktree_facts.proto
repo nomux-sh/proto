@@ -1,9 +1,10 @@
 // The payloads between the daemon and the git extension (`nomux.git`): the
-// git facts of the Worktrees of one repository.
+// git facts of the Worktrees of one repository, and the changes of a clean.
 //
-// These messages are not fields of an `Envelope`. They are the argument and
-// the result of the method `worktree_facts` of the extension.
-// spec/worktree.md has the method and the rules of each fact.
+// These messages are not fields of an `Envelope`. They are the arguments and
+// the results of the methods `worktree_facts`, `worktree_move_to_trash`,
+// `worktree_move_from_trash`, `worktree_delete` and `worktree_prune` of the
+// extension. spec/worktree.md has the methods and the rules of each fact.
 //
 // STATUS: DRAFT. The messages can change in a minor version until version
 // 1.0.0.
@@ -19,6 +20,9 @@ message WorktreeFactsRequest {
   // The absolute path of a worktree of the repository: the directory of a
   // Project.
   string repository = 1;
+  // The base branch that the user set, as a short name: for example
+  // `origin/main` or `main`. Empty: the extension finds the base branch.
+  string base_branch = 2;
 }
 
 // The result of the method `worktree_facts`.
@@ -87,4 +91,106 @@ message WorktreeFacts {
   repeated string ignored_paths = 17;
   // True when the worktree has more ignored paths than `ignored_paths`.
   bool ignored_paths_truncated = 18;
+}
+
+// The argument of the method `worktree_move_to_trash`: moves the directory
+// of a linked worktree to the trash place and locks it.
+message WorktreeMoveToTrashRequest {
+  // The absolute path of a worktree of the repository: the directory of a
+  // Project.
+  string repository = 1;
+  // The absolute path of the directory of the linked worktree.
+  string path = 2;
+  // The absolute path in the trash place. Its parent directory exists, and
+  // the path does not.
+  string trash_path = 3;
+  // The commit of `HEAD` that the plan saw. The extension refuses the move
+  // when `HEAD` is different.
+  string expected_head = 4;
+  // The ignored paths that may go with the directory, relative to it: the
+  // build output that the daemon did not delete, and, with
+  // `include_ignored`, the files of the user.
+  repeated string allowed_ignored_paths = 5;
+  // Move also when `HEAD` has commits that are not pushed.
+  bool allow_unpushed = 6;
+  // The base branch that the user set. Empty: the extension finds it.
+  string base_branch = 7;
+}
+
+// The result of the method `worktree_move_to_trash`.
+message WorktreeMoveToTrashResponse {
+  // Why the extension did not move the worktree. Empty when it moved and
+  // locked it.
+  repeated WorktreeRefusal refusals = 1;
+  // The refusals as English text for the user.
+  string message = 2;
+}
+
+// The argument of the method `worktree_move_from_trash`: unlocks a worktree
+// in the trash place and moves it back.
+message WorktreeMoveFromTrashRequest {
+  // The absolute path of a worktree of the repository.
+  string repository = 1;
+  // The absolute path of the directory in the trash place.
+  string trash_path = 2;
+  // The absolute path to move the directory to. It does not exist.
+  string path = 3;
+}
+
+// The result of the method `worktree_move_from_trash`.
+message WorktreeMoveFromTrashResponse {}
+
+// The argument of the method `worktree_delete`: removes a linked worktree
+// and, if asked, its branch.
+message WorktreeDeleteRequest {
+  // The absolute path of a worktree of the repository.
+  string repository = 1;
+  // The absolute path of the directory of the linked worktree: in the trash
+  // place, or, without the grace time, the directory of the worktree.
+  string path = 2;
+  // The commit of `HEAD` that the plan saw. The extension refuses the
+  // removal when `HEAD` is different.
+  string expected_head = 3;
+  // The ignored paths that the removal may delete, relative to the
+  // directory.
+  repeated string allowed_ignored_paths = 4;
+  // Remove also when `HEAD` has commits that are not pushed.
+  bool allow_unpushed = 5;
+  // After the removal, delete the branch if it is merged by the strict rule
+  // and its tip is `expected_head`.
+  bool delete_branch = 6;
+  // The base branch that the user set. Empty: the extension finds it.
+  string base_branch = 7;
+}
+
+// The result of the method `worktree_delete`.
+message WorktreeDeleteResponse {
+  // Why the extension did not remove the worktree. Empty when it removed
+  // it.
+  repeated WorktreeRefusal refusals = 1;
+  // The refusals as English text for the user.
+  string message = 2;
+  // True when the branch was deleted.
+  bool branch_deleted = 3;
+  // Why the branch stays when `delete_branch` was set, as English text.
+  string branch_kept_reason = 4;
+}
+
+// The argument of the method `worktree_prune`: removes the records of git of
+// the linked worktrees whose directory is missing.
+message WorktreePruneRequest {
+  // The absolute path of a worktree of the repository.
+  string repository = 1;
+  // The absolute paths of the records that the plan saw. The extension
+  // refuses the prune when the records to prune are different.
+  repeated string paths = 2;
+}
+
+// The result of the method `worktree_prune`.
+message WorktreePruneResponse {
+  // The paths of the records that git removed.
+  repeated string pruned = 1;
+  // Why the extension pruned nothing, as English text. Empty when it
+  // pruned.
+  string refusal = 2;
 }

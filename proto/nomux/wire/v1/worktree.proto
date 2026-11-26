@@ -1,13 +1,15 @@
 // Worktree service of the nomux control protocol: the git worktrees of the
 // Projects of a Host, with their state, their size and the reason why each
-// one can or cannot be removed.
+// one can or cannot be removed, and the clean that removes their build
+// output and moves finished Worktrees to a trash place.
 //
 // The requests and the responses are fields of `Request.body` and
 // `Response.result` (see envelope.proto). The Worktree service has the field
-// numbers 900 to 999 there.
+// numbers 900 to 999 there, and its events have the same block in
+// `Event.body`.
 //
-// spec/worktree.md has the model, the rules of the states and the flags, and
-// the sizes.
+// spec/worktree.md has the model, the rules of the states and the flags, the
+// sizes, the plan, the clean and the trash.
 //
 // STATUS: DRAFT. The messages can change in a minor version until version
 // 1.0.0.
@@ -23,7 +25,8 @@ enum WorktreeState {
   // A Session that is not ended has its working directory in the Worktree.
   WORKTREE_STATE_ACTIVE = 1;
   // Not active, and the branch of the Worktree is merged into the base
-  // branch: see `WorktreeMergedBy`.
+  // branch (see `WorktreeMergedBy`), or the user marked the Worktree
+  // finished (`WORKTREE_MARK_FINISHED`).
   WORKTREE_STATE_FINISHED = 2;
   // Not active, not finished, and no activity for the stale time.
   WORKTREE_STATE_STALE = 3;
@@ -52,7 +55,8 @@ enum WorktreeFlag {
   // The Worktree has ignored paths that are not build output: for example
   // `.env` or a local database.
   WORKTREE_FLAG_IGNORED_USER_FILES = 6;
-  // A process of the Host has its current directory in the Worktree.
+  // A process of the Host has its current directory in the Worktree, or a
+  // build holds the lock of a build output directory of the Worktree.
   WORKTREE_FLAG_BUSY = 7;
   // The directory of the Worktree does not exist. git calls the Worktree
   // prunable.
@@ -84,8 +88,7 @@ enum WorktreeMergedBy {
 }
 
 // Why a removal of the directory of a Worktree is refused. The removal
-// keeps the branch. This version of the protocol removes nothing: the
-// reasons tell the user what a removal would lose.
+// keeps the branch. The reasons tell the user what a removal would lose.
 enum WorktreeRefusal {
   // Not a reason. A client ignores it.
   WORKTREE_REFUSAL_UNSPECIFIED = 0;
@@ -95,7 +98,8 @@ enum WorktreeRefusal {
   WORKTREE_REFUSAL_DIRECTORY_MISSING = 2;
   // A Session that is not ended is in the Worktree.
   WORKTREE_REFUSAL_ACTIVE_SESSION = 3;
-  // A process has its current directory in the Worktree.
+  // A process has its current directory in the Worktree, or a build holds
+  // a lock of its build output.
   WORKTREE_REFUSAL_PROCESS_RUNNING = 4;
   // The Worktree has changes that are not committed.
   WORKTREE_REFUSAL_UNCOMMITTED_CHANGES = 5;
@@ -116,6 +120,26 @@ enum WorktreeRefusal {
   // The facts of the Worktree are not known: see
   // `WorktreeInfo.facts_unavailable_reason`.
   WORKTREE_REFUSAL_FACTS_UNKNOWN = 13;
+  // The user marked the Worktree to keep (`WORKTREE_MARK_KEEP`).
+  WORKTREE_REFUSAL_KEPT = 14;
+  // The Worktree has no trash place: the parent directory of its directory
+  // is not writable. Only a removal without the grace time applies.
+  WORKTREE_REFUSAL_NO_TRASH_PLACE = 15;
+  // The Worktree is in the trash place of nomux.
+  WORKTREE_REFUSAL_IN_TRASH = 16;
+}
+
+// A mark that the user set on a Worktree.
+enum WorktreeMark {
+  // No mark.
+  WORKTREE_MARK_UNSPECIFIED = 0;
+  // The work in the Worktree is done: the Worktree is finished also when no
+  // merge rule matches. The branch stays unless it is merged by the strict
+  // rule.
+  WORKTREE_MARK_FINISHED = 1;
+  // Keep the Worktree: no clean moves it to the trash or removes its build
+  // output.
+  WORKTREE_MARK_KEEP = 2;
 }
 
 // The size of a Worktree as the daemon measured it.
@@ -197,6 +221,16 @@ message WorktreeInfo {
   // Why the daemon does not know the git facts of this Worktree, as English
   // text for the user. Empty when it knows them.
   string facts_unavailable_reason = 16;
+  // The agent tool that probably made the Worktree, found by its directory
+  // or by the reason of its lock: `claude-code`, `codex`, `cursor` or
+  // `orca`. Empty when the daemon does not know a tool. A client shows the
+  // value as a guess.
+  string tool = 17;
+  // The mark that the user set.
+  WorktreeMark mark = 18;
+  // The identifier of the trash entry when the Worktree is in the trash
+  // place. Empty otherwise.
+  string trash_id = 19;
 }
 
 // The Worktrees of one Project.
@@ -239,4 +273,331 @@ message WorktreeListRequest {
 message WorktreeListResponse {
   // The Projects in the sequence of the workspace tree.
   repeated ProjectWorktrees projects = 1;
+}
+
+// What a clean removes.
+enum WorktreeCleanAction {
+  // Not an action. The daemon uses `WORKTREE_CLEAN_ACTION_FINISHED`.
+  WORKTREE_CLEAN_ACTION_UNSPECIFIED = 0;
+  // The build output of each linked Worktree. The directory and the branch
+  // of the Worktree stay.
+  WORKTREE_CLEAN_ACTION_BUILD_OUTPUT = 1;
+  // Each finished Worktree: its build output, then its directory to the
+  // trash place. Also the records of git of the Worktrees whose directory
+  // is missing.
+  WORKTREE_CLEAN_ACTION_FINISHED = 2;
+  // The build output of each stale Worktree.
+  WORKTREE_CLEAN_ACTION_STALE = 3;
+  // Only the records of git of the Worktrees whose directory is missing.
+  WORKTREE_CLEAN_ACTION_PRUNE = 4;
+}
+
+// One step of a plan.
+enum WorktreePlanStep {
+  // Not a step. A client shows the item without a step.
+  WORKTREE_PLAN_STEP_UNSPECIFIED = 0;
+  // Deletes one build output directory of the Worktree.
+  WORKTREE_PLAN_STEP_BUILD_OUTPUT = 1;
+  // Moves the directory of the Worktree to the trash place and locks it.
+  // The daemon removes it at the end of the grace time.
+  WORKTREE_PLAN_STEP_TRASH = 2;
+  // Removes the Worktree now, without the grace time.
+  WORKTREE_PLAN_STEP_DELETE = 3;
+  // Removes the records of git of the Worktrees of a repository whose
+  // directory is missing (`git worktree prune`).
+  WORKTREE_PLAN_STEP_PRUNE = 4;
+  // A proposal: a directory that has the `.git` file of a record whose
+  // directory is missing exists at `path`. `git worktree repair <path>`
+  // links it again. A clean does not run this step, and the repository
+  // gets no prune step.
+  WORKTREE_PLAN_STEP_REPAIR = 5;
+}
+
+// One item of a plan.
+message WorktreePlanItem {
+  // The identifier of the Project.
+  string project_id = 1;
+  // The absolute path of the directory of the Worktree.
+  string worktree_path = 2;
+  // What the item does.
+  WorktreePlanStep step = 3;
+  // `WORKTREE_PLAN_STEP_BUILD_OUTPUT`: the absolute path of the directory
+  // that the step deletes. `WORKTREE_PLAN_STEP_TRASH`: the path in the trash
+  // place. `WORKTREE_PLAN_STEP_REPAIR`: the directory that the daemon
+  // found. Empty for the other steps.
+  string path = 4;
+  // `WORKTREE_PLAN_STEP_BUILD_OUTPUT`: the identifier of the build-output
+  // rule that accepted the directory.
+  string rule = 5;
+  // The allocated bytes that the step frees, as the size of the Worktree
+  // counts them: an upper bound. 0 when the size is not known.
+  uint64 bytes = 6;
+  // The branch of the Worktree. Empty for a detached `HEAD`.
+  string branch = 7;
+  // The commit of `HEAD`. A clean skips the item if `HEAD` moved.
+  string head = 8;
+  // Why the item does not run, the most important reason first. Empty when
+  // it runs.
+  repeated WorktreeRefusal refusals = 9;
+  // Facts that the user reads before a clean, as English text: for example
+  // a Session without a process in the Worktree, or a tool that keeps a
+  // record of the Worktree.
+  repeated string warnings = 10;
+  // `WORKTREE_PLAN_STEP_TRASH` and `WORKTREE_PLAN_STEP_DELETE`: the removal
+  // also deletes the branch, if it is still merged by the strict rule and
+  // its tip is still `head`.
+  bool deletes_branch = 11;
+  // Why the branch stays when the request asked for `delete_branch`, as
+  // English text.
+  string branch_kept_reason = 12;
+  // The ignored paths that are not build output, relative to the directory
+  // of the Worktree: the paths that the refusal
+  // `WORKTREE_REFUSAL_IGNORED_USER_FILES` protects, or, with
+  // `include_ignored`, the paths that go with the directory.
+  repeated string ignored_user_paths = 13;
+}
+
+// Worktree.Plan: asks for the list of what a clean would remove. The daemon
+// keeps the plan and gives it an identifier. The plan changes nothing.
+message WorktreePlanRequest {
+  // The identifier of a Project. Empty for each Project of the workspace
+  // tree.
+  string project_id = 1;
+  // What the clean removes.
+  WorktreeCleanAction action = 2;
+  // The absolute paths of the Worktrees to clean. Empty for each Worktree of
+  // the Projects. A main worktree gets a build output step only when this
+  // list has it.
+  repeated string worktree_paths = 3;
+  // Also delete the branch of each Worktree whose branch is merged by the
+  // strict rule.
+  bool delete_branch = 4;
+  // Move a Worktree with commits that are not pushed to the trash. Its
+  // branch keeps the commits.
+  bool allow_unpushed = 5;
+  // Move the ignored paths that are not build output with the directory of
+  // the Worktree. They are deleted at the end of the grace time.
+  bool include_ignored = 6;
+  // Remove each Worktree now, without the grace time. Also for a Worktree
+  // that has no trash place.
+  bool now = 7;
+}
+
+// The reply to `WorktreePlanRequest`.
+message WorktreePlanResponse {
+  // The identifier of the plan, for `WorktreeCleanRequest`.
+  string plan_id = 1;
+  // The items, for each Worktree its build output first. An item with a
+  // refusal does not run.
+  repeated WorktreePlanItem items = 2;
+  // The sum of `bytes` of the items without a refusal.
+  uint64 total_bytes = 3;
+  // The grace time of the trash place in milliseconds.
+  uint64 grace_ms = 4;
+}
+
+// Worktree.Clean: runs the items of a plan.
+message WorktreeCleanRequest {
+  // The identifier from `WorktreePlanResponse`.
+  string plan_id = 1;
+}
+
+// The result of one item of a clean.
+enum WorktreeCleanOutcome {
+  // Not a result.
+  WORKTREE_CLEAN_OUTCOME_UNSPECIFIED = 0;
+  // The step ran.
+  WORKTREE_CLEAN_OUTCOME_DONE = 1;
+  // The step did not run: the facts of the Worktree changed after the plan.
+  WORKTREE_CLEAN_OUTCOME_CHANGED = 2;
+  // The step did not run: the item has a refusal, or the git extension
+  // refused it.
+  WORKTREE_CLEAN_OUTCOME_REFUSED = 3;
+  // The step failed.
+  WORKTREE_CLEAN_OUTCOME_FAILED = 4;
+}
+
+// What a clean did with one item of the plan.
+message WorktreeCleanResult {
+  // The item of the plan. For `WORKTREE_CLEAN_OUTCOME_REFUSED`, `refusals`
+  // has the reasons of the refusal.
+  WorktreePlanItem item = 1;
+  // The result.
+  WorktreeCleanOutcome outcome = 2;
+  // What happened, as English text. Empty for `WORKTREE_CLEAN_OUTCOME_DONE`.
+  string message = 3;
+}
+
+// The reply to `WorktreeCleanRequest`.
+message WorktreeCleanResponse {
+  // One result for each item of the plan, in the sequence of the plan.
+  repeated WorktreeCleanResult results = 1;
+  // The sum of `bytes` of the items that ran.
+  uint64 planned_bytes = 2;
+  // The increase of the free bytes of the file systems of the Worktrees
+  // from the start to the end of the clean. Other programs can change the
+  // free space at the same time.
+  uint64 freed_bytes = 3;
+}
+
+// Worktree.Mark: sets or removes the mark of a Worktree.
+message WorktreeMarkRequest {
+  // The absolute path of the directory of the Worktree.
+  string path = 1;
+  // The new mark. `WORKTREE_MARK_UNSPECIFIED` removes the mark.
+  WorktreeMark mark = 2;
+}
+
+// The reply to `WorktreeMarkRequest`.
+message WorktreeMarkResponse {}
+
+// One Worktree in the trash place.
+message WorktreeTrashEntry {
+  // The identifier of the entry.
+  string id = 1;
+  // The identifier of the Project.
+  string project_id = 2;
+  // The absolute path of the directory before the move: a restore moves the
+  // directory back to it.
+  string path = 3;
+  // The absolute path of the directory in the trash place.
+  string trash_path = 4;
+  // The branch of the Worktree.
+  string branch = 5;
+  // The commit of `HEAD` at the move.
+  string head = 6;
+  // When the directory moved: milliseconds after the Unix epoch.
+  uint64 trashed_at_ms = 7;
+  // The end of the grace time: milliseconds after the Unix epoch. After it,
+  // the daemon removes the Worktree.
+  uint64 expires_at_ms = 8;
+  // The removal also deletes the branch, if it is still merged by the
+  // strict rule and its tip is still `head`.
+  bool deletes_branch = 9;
+}
+
+// Worktree.Trash: asks for the entries of the trash place.
+message WorktreeTrashRequest {
+  // The identifier of a Project. Empty for each Project.
+  string project_id = 1;
+}
+
+// The reply to `WorktreeTrashRequest`.
+message WorktreeTrashResponse {
+  // The entries, the oldest first.
+  repeated WorktreeTrashEntry entries = 1;
+}
+
+// Worktree.Restore: moves a Worktree from the trash place back to its
+// directory.
+message WorktreeRestoreRequest {
+  // The identifier of the entry, the absolute path of the directory before
+  // the move, or the last part of that path when one entry has it.
+  string name = 1;
+}
+
+// The reply to `WorktreeRestoreRequest`.
+message WorktreeRestoreResponse {
+  // The entry that the daemon restored. It is no longer in the trash place.
+  WorktreeTrashEntry entry = 1;
+}
+
+// Worktree.EmptyTrash: removes Worktrees of the trash place before the end
+// of their grace time.
+message WorktreeEmptyTrashRequest {
+  // The identifiers of the entries. Empty for each entry.
+  repeated string ids = 1;
+}
+
+// What the removal of one trash entry did.
+message WorktreeTrashRemoval {
+  // The entry.
+  WorktreeTrashEntry entry = 1;
+  // True when the Worktree was removed.
+  bool removed = 2;
+  // Why the Worktree stays, as English text. Empty when it was removed.
+  string message = 3;
+  // True when the branch was deleted.
+  bool branch_deleted = 4;
+  // Why the branch stays when the entry has `deletes_branch`, as English
+  // text.
+  string branch_kept_reason = 5;
+}
+
+// The reply to `WorktreeEmptyTrashRequest`.
+message WorktreeEmptyTrashResponse {
+  // One removal for each entry.
+  repeated WorktreeTrashRemoval removals = 1;
+}
+
+// What changed in a Worktree.
+enum WorktreeChange {
+  // Not a change. A client ignores the event.
+  WORKTREE_CHANGE_UNSPECIFIED = 0;
+  // A build output directory was deleted.
+  WORKTREE_CHANGE_BUILD_OUTPUT_REMOVED = 1;
+  // The directory moved to the trash place.
+  WORKTREE_CHANGE_TRASHED = 2;
+  // The directory moved back from the trash place.
+  WORKTREE_CHANGE_RESTORED = 3;
+  // The Worktree was removed.
+  WORKTREE_CHANGE_REMOVED = 4;
+  // The records of git of Worktrees whose directory is missing were
+  // removed.
+  WORKTREE_CHANGE_PRUNED = 5;
+  // The mark of the Worktree changed.
+  WORKTREE_CHANGE_MARKED = 6;
+}
+
+// Event: a clean, a restore, the end of a grace time or a mark changed a
+// Worktree.
+message WorktreeChanged {
+  // The identifier of the Project.
+  string project_id = 1;
+  // The absolute path of the directory of the Worktree before the change.
+  string path = 2;
+  // What changed.
+  WorktreeChange change = 3;
+  // The bytes that the change freed, as the plan counted them. 0 when not
+  // known.
+  uint64 bytes = 4;
+  // True when a rule of the settings made the change, and no command of the
+  // user.
+  bool automatic = 5;
+  // The branch of the Worktree.
+  string branch = 6;
+  // True when the change also deleted the branch.
+  bool branch_deleted = 7;
+}
+
+// The level of the free space of a file system.
+enum WorktreeDiskLevel {
+  // The free space is above the warning level.
+  WORKTREE_DISK_LEVEL_UNSPECIFIED = 0;
+  // The free space is below the warning level.
+  WORKTREE_DISK_LEVEL_WARNING = 1;
+  // The free space is below the critical level.
+  WORKTREE_DISK_LEVEL_CRITICAL = 2;
+}
+
+// Event: the free space of a file system that has Worktrees went to a
+// different level.
+message WorktreeDiskPressure {
+  // A directory on the file system: the directory of a Project.
+  string path = 1;
+  // The new level.
+  WorktreeDiskLevel level = 2;
+  // The free bytes for a user without special rights.
+  uint64 free_bytes = 3;
+  // The free bytes below which the level starts. 0 for
+  // `WORKTREE_DISK_LEVEL_UNSPECIFIED`.
+  uint64 threshold_bytes = 4;
+  // The bytes of the Worktrees on the file system that a clean of finished
+  // Worktrees could remove now, as the last sizes count them.
+  uint64 reclaimable_bytes = 5;
+  // The part of `reclaimable_bytes` in build output.
+  uint64 build_output_bytes = 6;
+  // The command that shows the plan and changes nothing, for example
+  // `nomux worktree clean --all --dry-run`.
+  string command = 7;
 }

@@ -33,6 +33,10 @@ enum EventType {
   EVENT_TYPE_SESSION_WAKE_FAILED = 7;
   // `SessionMemoryLimitReached`.
   EVENT_TYPE_SESSION_MEMORY_LIMIT_REACHED = 8;
+  // `WorktreeChanged`.
+  EVENT_TYPE_WORKTREE_CHANGED = 9;
+  // `WorktreeDiskPressure`.
+  EVENT_TYPE_WORKTREE_DISK_PRESSURE = 10;
 }
 
 // Events.Subscribe: asks for the events of the Host on this connection. It

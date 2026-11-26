@@ -458,6 +458,8 @@ The Events service gives a client the changes on a Host as a stream of `Event` m
 | 303 | `SessionMemoryLimitReached` | `EVENT_TYPE_SESSION_MEMORY_LIMIT_REACHED` | The operating system ended the command of a Session at its memory limit. |
 | 600 | `EventsSnapshot` | none | The state of the Host follows. |
 | 800 | `WorkspaceChanged` | `EVENT_TYPE_WORKSPACE_CHANGED` | The workspace tree changed. The event has the new revision and one change. [workspace.md](workspace.md#event) has the changes. |
+| 900 | `WorktreeChanged` | `EVENT_TYPE_WORKTREE_CHANGED` | A clean, a restore, the end of a grace time or a mark changed a Worktree. [worktree.md](worktree.md#events) has the rules. |
+| 901 | `WorktreeDiskPressure` | `EVENT_TYPE_WORKTREE_DISK_PRESSURE` | The free space of a file system with Worktrees went to a different level. |
 
 A client ignores an event whose body it does not know.
 
@@ -505,11 +507,17 @@ The Workspace service gives and changes the workspace tree of the Host: the Grou
 
 ### Worktree
 
-The Worktree service gives the git worktrees of the Projects of the Host: their state, their flags, their size and the reasons why a removal of each one is refused. It only reads. [worktree.md](worktree.md) specifies the states, the flags, the merge rules, the sizes, the errors and the method `worktree_facts` of the git extension that gives the git facts.
+The Worktree service gives the git worktrees of the Projects of the Host: their state, their flags, their size and the reasons why a removal of each one is refused. It makes the plan of a clean and runs it, and it keeps the trash place. [worktree.md](worktree.md) specifies the states, the flags, the merge rules, the sizes, the plan, the clean, the trash place, the events, the errors and the methods of the git extension.
 
 | Field number | Method | Request | Response | Function |
 |-------------:|--------|---------|----------|----------|
 | 900 | `Worktree.List` | `WorktreeListRequest` | `WorktreeListResponse` | Gives the Worktrees of one Project or of each Project. |
+| 901 | `Worktree.Plan` | `WorktreePlanRequest` | `WorktreePlanResponse` | Gives the items of a clean. Changes nothing. |
+| 902 | `Worktree.Clean` | `WorktreeCleanRequest` | `WorktreeCleanResponse` | Runs the items of a plan. |
+| 903 | `Worktree.Mark` | `WorktreeMarkRequest` | `WorktreeMarkResponse` | Sets or removes the mark of a Worktree. |
+| 904 | `Worktree.Trash` | `WorktreeTrashRequest` | `WorktreeTrashResponse` | Gives the entries of the trash place. |
+| 905 | `Worktree.Restore` | `WorktreeRestoreRequest` | `WorktreeRestoreResponse` | Moves a Worktree from the trash place back. |
+| 906 | `Worktree.EmptyTrash` | `WorktreeEmptyTrashRequest` | `WorktreeEmptyTrashResponse` | Removes entries of the trash place now. |
 
 ## Open items
 
@@ -519,7 +527,7 @@ These items are not decided. The [roadmap](https://github.com/nomux-sh/docs/blob
 - A request that detaches one client and not all the clients of a Session.
 - A request that removes an ended Session before its retention time is over, and a request that starts the command of an ended Session again.
 - The name of the environment profile of a Session.
-- The other services: Team and Task. Worktree: the removal of a Worktree, its events and the events of the free space of a disk. [workspace.md](workspace.md#open-items) has the open items of the workspace tree.
+- The other services: Team and Task. [workspace.md](workspace.md#open-items) has the open items of the workspace tree.
 - Agent: more than one Agent run in a Session, the kind of a Child work (subagent, teammate, background task), and a self-report for a Child work.
 - Events: a request that marks a Session as seen without an attach, the events of the other services, and an event log that stays after a restart of the daemon.
 - Ext: the installation of an extension from a registry, the update of an extension, and events from the daemon to an extension.

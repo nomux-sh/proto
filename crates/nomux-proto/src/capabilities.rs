@@ -18,3 +18,8 @@ pub const SESSION_NAMES: &str = "session_names";
 /// The daemon gives the activity of each session: `Session.last_attached_at`
 /// and `Session.attached_clients`.
 pub const SESSION_ACTIVITY: &str = "session_activity";
+
+/// Sessions have a sandbox profile: `Session.sandbox`, the profile of
+/// `Session.Create` and `HostInfoResponse.sandbox`. `spec/control.md`,
+/// "Sandbox", has the rules.
+pub const SESSION_SANDBOX: &str = "session_sandbox";

@@ -59,6 +59,9 @@ fn generate(request: CodeGeneratorRequest) -> io::Result<Vec<File>> {
         .boxed(".nomux.wire.v1.Event.body.agent_run_changed")
         .boxed(".nomux.wire.v1.Response.result.agent_tree")
         .boxed(".nomux.wire.v1.Response.result.agent_explain")
+        // Most Sessions have no sandbox. Inline, it makes each response with
+        // a Session large.
+        .boxed(".nomux.wire.v1.Session.sandbox")
         .compile_fds(descriptors)?;
 
     let mut files = Vec::new();

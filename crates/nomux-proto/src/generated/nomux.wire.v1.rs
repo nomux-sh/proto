@@ -1149,6 +1149,27 @@ pub struct HostInfoResponse {
     /// from a daemon that is older than the field.
     #[prost(message, optional, tag = "4")]
     pub memory_limit: ::core::option::Option<MemoryLimitSupport>,
+    /// What the operating system of the Host applies of a sandbox. Absent
+    /// from a daemon without the capability `session_sandbox`.
+    #[prost(message, optional, tag = "5")]
+    pub sandbox: ::core::option::Option<SandboxSupport>,
+}
+/// What the operating system of the Host applies of a sandbox profile.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SandboxSupport {
+    /// The features that the operating system can apply. Each item is a
+    /// feature name of spec/control.md, "Sandbox". Empty if the Host can
+    /// apply no sandbox: a Session with a profile other than `off` does not
+    /// start there.
+    #[prost(string, repeated, tag = "1")]
+    pub enforced: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// The features that the operating system cannot apply.
+    #[prost(string, repeated, tag = "2")]
+    pub missing: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// What the daemon found, in English for the user: for example the
+    /// kernel and the version of its interface for the sandbox.
+    #[prost(string, tag = "3")]
+    pub detail: ::prost::alloc::string::String,
 }
 /// What the daemon can do with a memory limit of a Session.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -1277,6 +1298,31 @@ pub struct Session {
     /// 0 from a daemon without the capability `session_activity`.
     #[prost(uint32, tag = "18")]
     pub attached_clients: u32,
+    /// The sandbox of the Session. Absent if the Session has no sandbox, and
+    /// from a daemon without the capability `session_sandbox`.
+    /// spec/control.md, "Sandbox", has the rules.
+    #[prost(message, optional, boxed, tag = "19")]
+    pub sandbox: ::core::option::Option<::prost::alloc::boxed::Box<SessionSandbox>>,
+}
+/// The sandbox of a Session: its profile and what the operating system
+/// applies of it.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SessionSandbox {
+    /// The name of the sandbox profile.
+    #[prost(string, tag = "1")]
+    pub profile: ::prost::alloc::string::String,
+    /// If the limits apply now.
+    #[prost(enumeration = "SandboxState", tag = "2")]
+    pub state: i32,
+    /// The features that the operating system applies to the processes of the
+    /// Session. Each item is a feature name of spec/control.md, "Sandbox".
+    /// Empty if the Session has no process.
+    #[prost(string, repeated, tag = "3")]
+    pub enforced: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// The features that the profile wants and that the operating system does
+    /// not apply. Empty if the state is not `SANDBOX_STATE_PARTIAL`.
+    #[prost(string, repeated, tag = "4")]
+    pub missing: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 /// The last hibernation of a Session.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -1330,6 +1376,11 @@ pub struct SessionCreateRequest {
     /// reads the value only if `name` is not empty.
     #[prost(bool, tag = "4")]
     pub reuse_existing: bool,
+    /// The name of the sandbox profile of the new Session. If the value is
+    /// empty, the daemon uses its default for the Session. Only for a daemon
+    /// with the capability `session_sandbox`: spec/control.md, "Sandbox".
+    #[prost(string, tag = "5")]
+    pub sandbox: ::prost::alloc::string::String,
 }
 /// The reply to `SessionCreateRequest`.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -1775,6 +1826,47 @@ impl RestorePolicy {
             "RESTORE_POLICY_AUTO" => Some(Self::Auto),
             "RESTORE_POLICY_ON_FOCUS" => Some(Self::OnFocus),
             "RESTORE_POLICY_MANUAL" => Some(Self::Manual),
+            _ => None,
+        }
+    }
+}
+/// If the limits of a sandbox apply to the processes of a Session now.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum SandboxState {
+    /// The daemon did not set the field. The client treats the state as
+    /// unknown.
+    Unspecified = 0,
+    /// The operating system applies each feature that the profile wants.
+    Enforced = 1,
+    /// The operating system applies each feature that the profile requires,
+    /// but not each feature that it wants. `SessionSandbox.missing` has the
+    /// features that it does not apply.
+    Partial = 2,
+    /// The Session has no process now. The next start of its command applies
+    /// the profile again, or the start fails.
+    Inactive = 3,
+}
+impl SandboxState {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "SANDBOX_STATE_UNSPECIFIED",
+            Self::Enforced => "SANDBOX_STATE_ENFORCED",
+            Self::Partial => "SANDBOX_STATE_PARTIAL",
+            Self::Inactive => "SANDBOX_STATE_INACTIVE",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "SANDBOX_STATE_UNSPECIFIED" => Some(Self::Unspecified),
+            "SANDBOX_STATE_ENFORCED" => Some(Self::Enforced),
+            "SANDBOX_STATE_PARTIAL" => Some(Self::Partial),
+            "SANDBOX_STATE_INACTIVE" => Some(Self::Inactive),
             _ => None,
         }
     }

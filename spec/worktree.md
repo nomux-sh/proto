@@ -249,11 +249,12 @@ The git extension makes each change of git with the `git` program of the user. T
 
 | Method | Argument, result | What it does | Refuses |
 |---|---|---|---|
-| `worktree_move_to_trash` | `WorktreeMoveToTrashRequest`, `WorktreeMoveToTrashResponse` | `git worktree move <path> <trash_path>`, then `git worktree lock --reason nomux-trash <trash_path>` | The main worktree; a missing directory; facts that are not known; `HEAD` is not `expected_head`; changes that are not committed; commits that are not pushed, unless `allow_unpushed` or the strict merge rule matches; detached commits; a lock; a submodule; an ignored path that is not in `allowed_ignored_paths`; a `trash_path` on a different file system |
+| `worktree_move_to_trash` | `WorktreeMoveToTrashRequest`, `WorktreeMoveToTrashResponse` | `git worktree move <path> <trash_path>`, then `git worktree lock --reason nomux-trash <trash_path>` | The main worktree; a missing directory; facts that are not known; changes that are not committed; commits that are not pushed, unless `allow_unpushed` or the strict merge rule matches; detached commits; a lock; a submodule; an ignored path that is not in `allowed_ignored_paths`; a `trash_path` on a different file system |
 | `worktree_move_from_trash` | `WorktreeMoveFromTrashRequest`, `WorktreeMoveFromTrashResponse` | `git worktree unlock <trash_path>`, then `git worktree move <trash_path> <path>` | A worktree that is not locked with the reason `nomux-trash`; an existing `path` (an error) |
 | `worktree_delete` | `WorktreeDeleteRequest`, `WorktreeDeleteResponse` | `git worktree unlock` if the reason of the lock is `nomux-trash`, then `git worktree remove <path>`, then with `delete_branch` `git branch -D <branch>` | The checks of `worktree_move_to_trash`, except a lock with the reason `nomux-trash`. The branch stays when the strict merge rule does not match or when its tip is not `expected_head` |
 | `worktree_prune` | `WorktreePruneRequest`, `WorktreePruneResponse` | `git worktree prune` | A set of prunable records that is different from `paths` |
 
 - A refusal is not an error: the result has the refusals and a message. An error of `git` is an error of the call with `ERROR_CODE_FAILED` and the message of git.
+- A `HEAD` that is not `expected_head` is an error of the call with `ERROR_CODE_FAILED`: the plan is old. Nothing changes.
 - `worktree_delete` locks the worktree again with the reason `nomux-trash` when `git worktree remove` fails after the unlock.
 - The extension refuses each path that is not in its approved directories with `ERROR_CODE_PERMISSION_DENIED`. The trash place is in the parent directory of a worktree: the user approves a directory that contains the worktrees and their parent directory.

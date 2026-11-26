@@ -122,6 +122,42 @@ message Session {
   // The number of clients that are attached to the Session now. The value is
   // 0 from a daemon without the capability `session_activity`.
   uint32 attached_clients = 18;
+  // The sandbox of the Session. Absent if the Session has no sandbox, and
+  // from a daemon without the capability `session_sandbox`.
+  // spec/control.md, "Sandbox", has the rules.
+  SessionSandbox sandbox = 19;
+}
+
+// If the limits of a sandbox apply to the processes of a Session now.
+enum SandboxState {
+  // The daemon did not set the field. The client treats the state as
+  // unknown.
+  SANDBOX_STATE_UNSPECIFIED = 0;
+  // The operating system applies each feature that the profile wants.
+  SANDBOX_STATE_ENFORCED = 1;
+  // The operating system applies each feature that the profile requires,
+  // but not each feature that it wants. `SessionSandbox.missing` has the
+  // features that it does not apply.
+  SANDBOX_STATE_PARTIAL = 2;
+  // The Session has no process now. The next start of its command applies
+  // the profile again, or the start fails.
+  SANDBOX_STATE_INACTIVE = 3;
+}
+
+// The sandbox of a Session: its profile and what the operating system
+// applies of it.
+message SessionSandbox {
+  // The name of the sandbox profile.
+  string profile = 1;
+  // If the limits apply now.
+  SandboxState state = 2;
+  // The features that the operating system applies to the processes of the
+  // Session. Each item is a feature name of spec/control.md, "Sandbox".
+  // Empty if the Session has no process.
+  repeated string enforced = 3;
+  // The features that the profile wants and that the operating system does
+  // not apply. Empty if the state is not `SANDBOX_STATE_PARTIAL`.
+  repeated string missing = 4;
 }
 
 // Why the daemon hibernated a Session.
@@ -183,6 +219,10 @@ message SessionCreateRequest {
   // `name`, the daemon creates no Session and gives that Session. The daemon
   // reads the value only if `name` is not empty.
   bool reuse_existing = 4;
+  // The name of the sandbox profile of the new Session. If the value is
+  // empty, the daemon uses its default for the Session. Only for a daemon
+  // with the capability `session_sandbox`: spec/control.md, "Sandbox".
+  string sandbox = 5;
 }
 
 // The reply to `SessionCreateRequest`.

@@ -67,7 +67,7 @@ An event of a service has a field number of the block of that service in `Event.
 
 | Field number | Method | Request | Response | Function |
 |-------------:|--------|---------|----------|----------|
-| 200 | `Host.Info` | `HostInfoRequest` | `HostInfoResponse` | Gives the product version of the daemon, its process ID, the number of Sessions and if the operating system applies a memory limit to a Session (`memory_limit`). Ended Sessions are not in the number. |
+| 200 | `Host.Info` | `HostInfoRequest` | `HostInfoResponse` | Gives the product version of the daemon, its process ID, the number of Sessions, if the operating system applies a memory limit to a Session (`memory_limit`) and what it applies of a sandbox (`sandbox`). Ended Sessions are not in the number. |
 | 201 | `Host.Stop` | `HostStopRequest` | `HostStopResponse` | Stops the daemon. The daemon sends the response, closes each connection and exits. No Session ends. |
 
 ### Session
@@ -112,6 +112,7 @@ Errors of the Session service:
 | `SessionSetPinnedRequest` | The Session has the state `SESSION_STATE_DAMAGED`, or the daemon cannot store the pin. | `ERROR_CODE_FAILED` |
 | `SessionCreateRequest`, `SessionRenameRequest` | The name is not valid, or a different Session that is not ended has the name (for `SessionCreateRequest`: and `reuse_existing` is false). The message names the reason, and the identifier of the Session that has the name. See "Names". | `ERROR_CODE_FAILED` |
 | `SessionRenameRequest` | The daemon cannot store the name. | `ERROR_CODE_FAILED` |
+| `SessionCreateRequest`, `SessionAttachRequest`, `SessionStartRequest` | The Session has a sandbox profile that the daemon does not know, or that the operating system of the Host cannot apply. See "Sandbox". | `ERROR_CODE_FAILED` |
 
 A Session has one of these states:
 
@@ -139,6 +140,7 @@ A client treats a state that it does not know as unknown.
 - `name` is the session name, or empty if the Session has no name: see "Names".
 - `last_attached_at` is the time of the last `Session.Attach` that got its response, in seconds after the Unix epoch. The value is 0 if no client attached, or if the daemon does not know it.
 - `attached_clients` is the number of clients that are attached to the Session at the time of the response.
+- `sandbox` is present if the Session has a sandbox profile other than `off`: see "Sandbox".
 - `damage` is not empty when the daemon cannot read a part of the state files of the Session. In the state `SESSION_STATE_DAMAGED`, it is the reason for the state. In a different state, a part of the output of the Session is gone, and the Session can be used.
 
 ### Names
@@ -190,6 +192,28 @@ A hibernated Session is a dormant Session whose command the daemon stopped, beca
 - A wake that fails leaves the Session hibernated. The request fails with `ERROR_CODE_FAILED`, `wake_error` has the reason, and `resume_command` is the command that the user can run by hand.
 - **The resume command never goes to a shell.** `resume_command` is the text of `AgentDetails.resume_command` as the adapter reported it. The daemon divides it into words with the quoting rules of a POSIX shell only: single quotes, double quotes and a backslash. It does no expansion and no substitution, and it has no operators. A command that has, outside quotes, one of `;`, `|`, `&`, `<`, `>`, `(`, `)`, `$`, `` ` ``, `*`, `?`, `[`, `#`, `~` or a line break, or that has `$` or `` ` `` in double quotes, or that has a quote without its end, does not start: the wake fails with the reason. The daemon starts the first word as the program with the other words as its arguments. It adds no word and changes no word.
 - A Session without a resume command is never hibernated automatically.
+
+### Sandbox
+
+A sandbox limits what the processes of a Session can do: which files they can read and write, and if they can use the network. The limits apply to the command and to each process that descends from it, and they cannot be removed. A daemon with the capability `session_sandbox` implements this section. A client sends a profile only to such a daemon: an older daemon ignores the field and starts the Session **without** limits.
+
+- A sandbox profile is a name. The daemon of the Host has the profiles and their rules, thus a profile name means the rules of the Host where the Session runs. The profile `off` is no sandbox.
+- `SessionCreateRequest.sandbox` names the profile of the new Session. If it is empty, the daemon uses its default: the configuration of the Host decides it. A Session keeps its profile: a restore and a wake apply it again, with the rules of the profile at that time.
+- **Fail closed.** If the daemon does not know the profile, or if the operating system cannot apply each feature that the profile requires, the Session does not start: `SessionCreateRequest` fails with `ERROR_CODE_FAILED` and the reason. A dormant Session whose profile cannot be applied stays dormant: the restore fails with the reason. The command never runs without the features that its profile requires.
+- A profile can want a feature without requiring it. If the operating system cannot apply such a feature, the Session starts with the state `SANDBOX_STATE_PARTIAL`, and `missing` has the feature.
+- `Session.sandbox` has the profile, the state and the features. `HostInfoResponse.sandbox` has the features that the operating system of the Host can apply, before a Session asks for them.
+
+A feature name has the rules of a capability flag name. This version has these features:
+
+| Name | Meaning |
+|------|---------|
+| `files` | The processes can read, write and run files only where the profile permits it. |
+| `network_off` | The processes cannot open a network connection: no TCP, no UDP and no other socket of an internet protocol. |
+| `unix_sockets` | The processes cannot connect to a Unix socket of a path that the profile does not permit. Without it, the processes can connect to each socket of the user, also to the sockets of nomux. |
+| `signals` | The processes cannot send a signal to a process outside the sandbox. |
+| `abstract_sockets` | The processes cannot connect to an abstract Unix socket of a process outside the sandbox. |
+
+A client shows a feature name that it does not know as text. The features of a later version are added to this table.
 
 ### Capture
 

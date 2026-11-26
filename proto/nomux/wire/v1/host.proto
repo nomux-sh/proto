@@ -25,6 +25,23 @@ message HostInfoResponse {
   // If the operating system applies a memory limit to a Session. Absent
   // from a daemon that is older than the field.
   MemoryLimitSupport memory_limit = 4;
+  // What the operating system of the Host applies of a sandbox. Absent
+  // from a daemon without the capability `session_sandbox`.
+  SandboxSupport sandbox = 5;
+}
+
+// What the operating system of the Host applies of a sandbox profile.
+message SandboxSupport {
+  // The features that the operating system can apply. Each item is a
+  // feature name of spec/control.md, "Sandbox". Empty if the Host can
+  // apply no sandbox: a Session with a profile other than `off` does not
+  // start there.
+  repeated string enforced = 1;
+  // The features that the operating system cannot apply.
+  repeated string missing = 2;
+  // What the daemon found, in English for the user: for example the
+  // kernel and the version of its interface for the sandbox.
+  string detail = 3;
 }
 
 // What the daemon can do with a memory limit of a Session.

@@ -207,6 +207,7 @@ fn host_service_wire_bytes_are_stable() {
             daemon_pid: 7,
             session_count: 2,
             memory_limit: None,
+            sandbox: None,
         })),
         [
             0x08, 0x01, // id = 1
@@ -416,6 +417,7 @@ fn the_description_of_a_session_has_stable_wire_bytes() {
         name: String::new(),
         last_attached_at: 0,
         attached_clients: 0,
+        sandbox: None,
     };
     assert_eq!(
         session.encode_to_vec(),

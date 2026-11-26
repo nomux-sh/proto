@@ -94,6 +94,14 @@ message Session {
   // Why the daemon cannot read a part of the state files of the Session, in
   // English for the user. The value is empty if the files are not damaged.
   string damage = 12;
+  // The working directory with each symbolic link resolved: an absolute path
+  // on the Host. The daemon resolves `working_directory` one time, when the
+  // Session is created or when the daemon finds it again after its start.
+  // The value is empty if the daemon cannot resolve the path, for example
+  // because the directory was removed, and from a daemon that is older than
+  // the field. A client matches the Session with a Project by this value if
+  // it is not empty, else by `working_directory`: spec/workspace.md.
+  string resolved_working_directory = 13;
 }
 
 // Session.Create: starts a new Session.

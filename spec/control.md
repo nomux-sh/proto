@@ -124,6 +124,7 @@ A client treats a state that it does not know as unknown.
 - The description never has the environment of the command or a value of it.
 - `pid` is not 0 only in the state `SESSION_STATE_RUNNING`.
 - `exit` is set only in the state `SESSION_STATE_ENDED`. It has the time of the end, and the exit code or the signal if the daemon knows it.
+- `resolved_working_directory` is `working_directory` with each symbolic link resolved. The daemon resolves the path one time, when the Session is created or when the daemon finds the Session again after its start, and the value then does not change. It is empty if the path cannot be resolved, and from an older daemon. `working_directory` stays the path that the client sent. A client uses the resolved path to find the Project of the Session: [workspace.md](workspace.md#projects-sessions-and-worktrees).
 - `damage` is not empty when the daemon cannot read a part of the state files of the Session. In the state `SESSION_STATE_DAMAGED`, it is the reason for the state. In a different state, a part of the output of the Session is gone, and the Session can be used.
 
 ### Restore

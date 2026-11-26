@@ -35,12 +35,12 @@ A Project names a directory on the Host: the root of its repository.
 
 A Session relates to a Project by its working directory. No message of the Session service has a field for the Project:
 
-1. Take `Session.working_directory`.
+1. Take `Session.resolved_working_directory`. If it is empty, take `Session.working_directory`. The directory of a Project has its symbolic links resolved, thus the resolved path of the Session matches it also when the Session started in a path with a symbolic link, for example `/tmp` on macOS.
 2. A Project matches if its directory is equal to the working directory, or is a directory above it. Compare complete path components: `/src/app` matches `/src/app/web`, but not `/src/application`.
 3. If more than one Project matches, the Project with the longest directory is the Project of the Session.
 4. If no Project matches, the Session has no Project.
 
-The working directory of a Session does not change, thus the Project of a Session changes only when the tree changes: after `Workspace.AddProject` and `Workspace.RemoveProject`. A Group has no Session of its own: the Sessions of a Group are the Sessions of the Projects in it and in each Group below it.
+The working directory of a Session and its resolved path do not change, thus the Project of a Session changes only when the tree changes: after `Workspace.AddProject` and `Workspace.RemoveProject`. A Group has no Session of its own: the Sessions of a Group are the Sessions of the Projects in it and in each Group below it.
 
 A Worktree of a Project is a git worktree of the repository of the Project. A Worktree whose directory is below the directory of its Project relates to the Project by the same rule. A Worktree in a different place has no Project in this version: see [Open items](#open-items).
 

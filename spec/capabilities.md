@@ -40,6 +40,8 @@ A flag does not replace the protocol version. The version rule is in [compatibil
 | `waits`             | `reserved` | —     | Not specified yet. The name is reserved for wait operations that are driven by events. |
 | `pane_state_events` | `reserved` | —     | Not specified yet. The name is reserved for events about pane state. |
 | `output_history`    | `active`   | 1     | The daemon can send output of an earlier epoch of a Session, and the terminal frames `HistoryGap` and `Restored`. [frame.md](frame.md) specifies when. |
+| `session_names`     | `active`   | 1     | Sessions have names: `Session.name`, `SessionCreateRequest.name` and `reuse_existing`, `SessionCreateResponse.created` and `Session.Rename`. [control.md](control.md#names) specifies the rules. |
+| `session_activity`  | `active`   | 1     | The daemon gives `Session.last_attached_at` and `Session.attached_clients`. [control.md](control.md#fields-of-a-session) specifies them. |
 
 The module `nomux_proto::capabilities` has a constant for each `active` flag.
 

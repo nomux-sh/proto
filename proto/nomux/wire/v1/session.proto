@@ -111,6 +111,17 @@ message Session {
   SessionHibernation hibernation = 14;
   // The user excluded the Session from automatic hibernation.
   bool pinned = 15;
+  // The session name. The value is empty if the Session has no name, and
+  // from a daemon without the capability `session_names`. spec/control.md,
+  // "Names", has the rules.
+  string name = 16;
+  // When a client attached to the Session the last time: seconds after the
+  // Unix epoch. The value is 0 if no client attached, and from a daemon
+  // without the capability `session_activity`.
+  uint64 last_attached_at = 17;
+  // The number of clients that are attached to the Session now. The value is
+  // 0 from a daemon without the capability `session_activity`.
+  uint32 attached_clients = 18;
 }
 
 // Why the daemon hibernated a Session.
@@ -164,12 +175,25 @@ message SessionCreateRequest {
   // The working directory of the command: an absolute path on the Host. If
   // the value is empty, the daemon uses the home directory of the user.
   string working_directory = 2;
+  // The name of the new Session. If the value is empty, the Session has no
+  // name. Only for a daemon with the capability `session_names`:
+  // spec/control.md, "Names".
+  string name = 3;
+  // If the value is true and a Session that is not ended has the name
+  // `name`, the daemon creates no Session and gives that Session. The daemon
+  // reads the value only if `name` is not empty.
+  bool reuse_existing = 4;
 }
 
 // The reply to `SessionCreateRequest`.
 message SessionCreateResponse {
-  // The new Session.
+  // The new Session, or the Session that has the name of the request if
+  // `created` is false.
   Session session = 1;
+  // The value is false if the daemon gave an existing Session for
+  // `reuse_existing`. A daemon without the capability `session_names` does
+  // not set the field.
+  bool created = 2;
 }
 
 // Session.List: asks for the Sessions on the Host.
@@ -398,6 +422,22 @@ message SessionSetPinnedRequest {
 
 // The reply to `SessionSetPinnedRequest`.
 message SessionSetPinnedResponse {}
+
+// Session.Rename: gives a Session a different name, or removes its name.
+// Only for a daemon with the capability `session_names`.
+message SessionRenameRequest {
+  // The identifier of the Session.
+  string id = 1;
+  // The new name of the Session. If the value is empty, the daemon removes
+  // the name.
+  string name = 2;
+}
+
+// The reply to `SessionRenameRequest`.
+message SessionRenameResponse {
+  // The Session with its new name.
+  Session session = 1;
+}
 
 // Event: the daemon hibernated a Session. The fields of the trigger are set
 // only for its reason.

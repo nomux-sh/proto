@@ -87,6 +87,7 @@ An event of a service has a field number of the block of that service in `Event.
 | 310 | `Session.Memory` | `SessionMemoryRequest` | `SessionMemoryResponse` | Gives the memory that the processes of each Session use. |
 | 311 | `Session.Hibernate` | `SessionHibernateRequest` | `SessionHibernateResponse` | Stops the command of an agent Session that can resume, and keeps the Session as a hibernated Session. |
 | 312 | `Session.SetPinned` | `SessionSetPinnedRequest` | `SessionSetPinnedResponse` | Excludes a Session from automatic hibernation, or takes the exclusion back. |
+| 313 | `Session.Rename` | `SessionRenameRequest` | `SessionRenameResponse` | Gives a Session a different name, or removes its name. |
 
 Errors of the Session service:
 
@@ -109,6 +110,8 @@ Errors of the Session service:
 | `SessionHibernateRequest` | The command did not end in the permitted time. | `ERROR_CODE_TIMEOUT` |
 | `SessionAttachRequest`, `SessionStartRequest` | The Session is hibernated and its resume command cannot start. `Session.hibernation.wake_error` has the reason. | `ERROR_CODE_FAILED` |
 | `SessionSetPinnedRequest` | The Session has the state `SESSION_STATE_DAMAGED`, or the daemon cannot store the pin. | `ERROR_CODE_FAILED` |
+| `SessionCreateRequest`, `SessionRenameRequest` | The name is not valid, or a different Session that is not ended has the name (for `SessionCreateRequest`: and `reuse_existing` is false). The message names the reason, and the identifier of the Session that has the name. See "Names". | `ERROR_CODE_FAILED` |
+| `SessionRenameRequest` | The daemon cannot store the name. | `ERROR_CODE_FAILED` |
 
 A Session has one of these states:
 
@@ -133,7 +136,30 @@ A client treats a state that it does not know as unknown.
 - `resolved_working_directory` is `working_directory` with each symbolic link resolved. The daemon resolves the path one time, when the Session is created or when the daemon finds the Session again after its start, and the value then does not change. It is empty if the path cannot be resolved, and from an older daemon. `working_directory` stays the path that the client sent. A client uses the resolved path to find the Project of the Session: [workspace.md](workspace.md#projects-sessions-and-worktrees).
 - `hibernation` is present while the Session is hibernated, and while its command is the resumed run of its last hibernation: see "Hibernation".
 - `pinned` is true if the user excluded the Session from automatic hibernation.
+- `name` is the session name, or empty if the Session has no name: see "Names".
+- `last_attached_at` is the time of the last `Session.Attach` that got its response, in seconds after the Unix epoch. The value is 0 if no client attached, or if the daemon does not know it.
+- `attached_clients` is the number of clients that are attached to the Session at the time of the response.
 - `damage` is not empty when the daemon cannot read a part of the state files of the Session. In the state `SESSION_STATE_DAMAGED`, it is the reason for the state. In a different state, a part of the output of the Session is gone, and the Session can be used.
+
+### Names
+
+A Session can have a name, which a user gives and changes. The identifier of a Session never changes; its name can change. A daemon with the capability `session_names` implements this section. A client sends a name only to such a daemon: an older daemon ignores the field and creates a Session without a name.
+
+- A name has 1 to 64 characters from `A-Z`, `a-z`, `0-9`, `.`, `_` and `-`. The first character is a letter or a digit. Names are case-sensitive.
+- A name is unique on the Host among the Sessions that are not ended. The daemon checks it and creates or renames the Session in one step, thus of two requests for the same name at the same time, one gets the name.
+- A name is not equal to the identifier of a different Session that is not ended. A new identifier is not equal to the name of a Session that is not ended. Thus a text never names one Session by its identifier and a different Session by its name.
+- An ended Session keeps its name in `Session.name`. A new Session or a rename can take that name at once.
+- A dormant Session, also a hibernated one, keeps its name. The name stays with the Session after a restart of the daemon and of the Host.
+- `SessionCreateRequest` with `name` and `reuse_existing` true: if a Session that is not ended has the name, the daemon creates nothing and gives that Session with `created` false. The other fields of the request are ignored. Else the daemon creates the Session with the name and `created` is true. A dormant Session that the daemon gives this way stays dormant: an attach starts it again, as the restore policy says.
+- `Session.Rename` with the current name of the Session succeeds and changes nothing. A rename with an empty name removes the name. The response has the Session with its new name.
+
+The daemon takes identifiers only. A client that lets a user name a Session by a text (a target) finds the Session in the response of `Session.List` with these steps; the first step that finds a Session wins:
+
+1. A Session whose identifier is the text.
+2. A Session that is not ended and whose name is the text.
+3. A Session that is not ended and whose identifier or name starts with the text. This step must find exactly one Session.
+
+An ended Session is found only in step 1. If step 3 finds more than one Session, the target is ambiguous: the client does nothing and shows each candidate. If no step finds a Session, the client reports that the Session does not exist, as `ERROR_CODE_NOT_FOUND` does.
 
 ### Restore
 

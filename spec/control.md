@@ -77,6 +77,7 @@ Each service has its own block of 100 field numbers in `Request.body` and in `Re
 | 307 | `Session.Start` | `SessionStartRequest` | `SessionStartResponse` | Starts the command of a dormant Session again. |
 | 308 | `Session.Capture` | `SessionCaptureRequest` | `SessionCaptureResponse` | Gives output bytes of a Session that are before a position: the scrollback. |
 | 309 | `Session.SetRestorePolicy` | `SessionSetRestorePolicyRequest` | `SessionSetRestorePolicyResponse` | Sets when the daemon starts the command of a Session again. |
+| 310 | `Session.Memory` | `SessionMemoryRequest` | `SessionMemoryResponse` | Gives the memory that the processes of each Session use. |
 
 Errors of the Session service:
 
@@ -145,6 +146,25 @@ The daemon keeps the description and the output of each Session on the Host. Thu
 - If `data` is empty, the daemon has no output of that epoch before `before_seq`. The output of the epoch before it is in the epoch with the next smaller number: a client asks for that epoch without `before_seq`.
 - With the epoch `0`, the daemon uses the newest epoch of the Session, and the response has its number.
 - The bytes are the output as the command wrote it. A response can start or end in the middle of an escape sequence or of a UTF-8 character.
+
+### Memory
+
+`Session.Memory` gives the memory that the processes of each Session use at the time of the request.
+
+- The daemon measures the memory when it gets the request. It keeps no value between two requests, and it measures nothing when no client asks. A client that shows the values again sends the request again.
+- The response has one entry for each Session that has a holder: the states `SESSION_STATE_RUNNING` and `SESSION_STATE_UNREACHABLE`. A Session without a process has no entry. A Session whose processes end during the request can have no entry.
+- `command_bytes` is the memory of the process tree of the command: the command and each process that descends from it. `command_processes` is the number of these processes. A process that left the tree is not in the value: the operating system gave it a different parent after its own parent ended.
+- `holder_bytes` is the memory of the holder. It is not a part of `command_bytes`.
+- `measure` says how the daemon measured the two values of one entry:
+
+| Value | Name | Meaning |
+|------:|------|---------|
+| 0 | `MEMORY_MEASURE_UNSPECIFIED` | The daemon did not set the field. The client treats the measure as unknown. |
+| 1 | `MEMORY_MEASURE_PROPORTIONAL` | The proportional set size (PSS). A page that more than one process uses is divided between these processes, thus a sum of values counts no page two times. |
+| 2 | `MEMORY_MEASURE_RESIDENT` | The resident set size (RSS). A page that more than one process uses is in the value of each of them, thus a sum of values can be larger than the memory in use. |
+
+- The daemon uses `MEMORY_MEASURE_PROPORTIONAL` for an entry only if the operating system gives that value for each process of the entry. The entries of one response can have different measures.
+- A client treats a measure that it does not know as unknown.
 
 ### Attach
 

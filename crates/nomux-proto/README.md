@@ -8,7 +8,7 @@ In development. Versions earlier than 1.0.0 are pre-releases: interfaces can cha
 
 The crate has these parts now:
 
-- `wire::v1`: the control messages. These are the envelope messages (`Envelope`, `Request`, `Response`, `Event`, `Error`), the handshake messages (`Hello`, `Welcome`), the Host service (`Info`, `Stop`), the Session service (`Create`, `List`, `Kill`, `Attach`, `Detach`, `Input`, `Resize`, `Start`, `Capture`, `SetRestorePolicy`) and the Ext service (`List`, `Inspect`, `Install`, `Remove`, `SetEnabled`, `Call`). `prost` generates these types from the protobuf schemas.
+- `wire::v1`: the control messages. These are the envelope messages (`Envelope`, `Request`, `Response`, `Event`, `Error`), the handshake messages (`Hello`, `Welcome`), the Host service (`Info`, `Stop`), the Session service (`Create`, `List`, `Kill`, `Attach`, `Detach`, `Input`, `Resize`, `Start`, `Capture`, `SetRestorePolicy`, `Memory`) and the Ext service (`List`, `Inspect`, `Install`, `Remove`, `SetEnabled`, `Call`). `prost` generates these types from the protobuf schemas.
 - `frame`: the fixed 24-byte header of a terminal data frame and the payload of the `End` frame, with encode and decode functions.
 - `compatibility`: the control protocol version and the version rule of the handshake.
 - `capabilities`: the names of the capability flags that are `active`.

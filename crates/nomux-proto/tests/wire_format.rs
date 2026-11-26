@@ -7,14 +7,14 @@ use nomux_proto::capabilities::OUTPUT_HISTORY;
 use nomux_proto::compatibility::EXIT_CODE_VERSION_INCOMPATIBLE;
 use nomux_proto::wire::v1::{
     ClientKind, Envelope, Error, ErrorCode, Event, Hello, HostInfoRequest, HostInfoResponse,
-    HostStopRequest, HostStopResponse, Request, Response, RestorePolicy, Session,
+    HostStopRequest, HostStopResponse, MemoryMeasure, Request, Response, RestorePolicy, Session,
     SessionAttachRequest, SessionAttachResponse, SessionCaptureRequest, SessionCaptureResponse,
     SessionCreateRequest, SessionCreateResponse, SessionDetachRequest, SessionDetachResponse,
     SessionExit, SessionInputRequest, SessionInputResponse, SessionKillRequest,
-    SessionKillResponse, SessionListRequest, SessionListResponse, SessionResizeRequest,
-    SessionResizeResponse, SessionSetRestorePolicyRequest, SessionSetRestorePolicyResponse,
-    SessionStartRequest, SessionStartResponse, SessionState, Welcome, envelope, request, response,
-    session_exit,
+    SessionKillResponse, SessionListRequest, SessionListResponse, SessionMemory,
+    SessionMemoryRequest, SessionMemoryResponse, SessionResizeRequest, SessionResizeResponse,
+    SessionSetRestorePolicyRequest, SessionSetRestorePolicyResponse, SessionStartRequest,
+    SessionStartResponse, SessionState, Welcome, envelope, request, response, session_exit,
 };
 use prost::Message;
 
@@ -158,6 +158,13 @@ fn restore_policy_values_are_stable() {
     assert_eq!(RestorePolicy::Auto as i32, 1);
     assert_eq!(RestorePolicy::OnFocus as i32, 2);
     assert_eq!(RestorePolicy::Manual as i32, 3);
+}
+
+#[test]
+fn memory_measure_values_are_stable() {
+    assert_eq!(MemoryMeasure::Unspecified as i32, 0);
+    assert_eq!(MemoryMeasure::Proportional as i32, 1);
+    assert_eq!(MemoryMeasure::Resident as i32, 2);
 }
 
 #[test]
@@ -503,6 +510,35 @@ fn restore_requests_of_the_session_service_have_stable_wire_bytes() {
             SessionSetRestorePolicyResponse {}
         )),
         [0x08, 0x01, 0xaa, 0x13, 0x00],
+    );
+}
+
+#[test]
+fn the_memory_request_of_the_session_service_has_stable_wire_bytes() {
+    assert_eq!(
+        request_bytes(request::Body::SessionMemory(SessionMemoryRequest {})),
+        [0x08, 0x01, 0xb2, 0x13, 0x00], // id = 1; field 310, bytes: empty
+    );
+    assert_eq!(
+        response_bytes(response::Result::SessionMemory(SessionMemoryResponse {
+            sessions: vec![SessionMemory {
+                id: "s".to_owned(),
+                command_bytes: 300,
+                command_processes: 2,
+                holder_bytes: 9,
+                measure: MemoryMeasure::Resident.into(),
+            }],
+        })),
+        [
+            0x08, 0x01, // id = 1
+            0xb2, 0x13, 0x0e, // field 310, bytes: session_memory
+            0x0a, 0x0c, // field 1, bytes: sessions
+            0x0a, 0x01, b's', // field 1, bytes: id = "s"
+            0x10, 0xac, 0x02, // field 2, varint: command_bytes = 300
+            0x18, 0x02, // field 3, varint: command_processes = 2
+            0x20, 0x09, // field 4, varint: holder_bytes = 9
+            0x28, 0x02, // field 5, varint: measure = RESIDENT
+        ],
     );
 }
 

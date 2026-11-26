@@ -664,6 +664,40 @@ pub struct SessionSetRestorePolicyRequest {
 /// The reply to `SessionSetRestorePolicyRequest`.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct SessionSetRestorePolicyResponse {}
+/// The memory that the processes of one Session use.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SessionMemory {
+    /// The identifier of the Session.
+    #[prost(string, tag = "1")]
+    pub id: ::prost::alloc::string::String,
+    /// The memory of the process tree of the command: the command and each
+    /// process that descends from it. The value is in bytes. The memory of the
+    /// holder is not in this value.
+    #[prost(uint64, tag = "2")]
+    pub command_bytes: u64,
+    /// The number of processes in the process tree of the command.
+    #[prost(uint32, tag = "3")]
+    pub command_processes: u32,
+    /// The memory of the holder of the Session, in bytes.
+    #[prost(uint64, tag = "4")]
+    pub holder_bytes: u64,
+    /// How the daemon measured `command_bytes` and `holder_bytes`.
+    #[prost(enumeration = "MemoryMeasure", tag = "5")]
+    pub measure: i32,
+}
+/// Session.Memory: asks for the memory that the processes of each Session
+/// use. The daemon measures the memory for this request: it keeps no value
+/// and measures nothing when no client asks. spec/control.md has the rules.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SessionMemoryRequest {}
+/// The reply to `SessionMemoryRequest`.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SessionMemoryResponse {
+    /// One entry for each Session that has a holder, in the sequence of the
+    /// identifiers. A Session without a process has no entry.
+    #[prost(message, repeated, tag = "1")]
+    pub sessions: ::prost::alloc::vec::Vec<SessionMemory>,
+}
 /// The state of a Session, as the daemon knows it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -751,6 +785,44 @@ impl RestorePolicy {
         }
     }
 }
+/// How the daemon measured the memory of the processes of a Session.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum MemoryMeasure {
+    /// The daemon did not set the field. The client treats the measure as
+    /// unknown.
+    Unspecified = 0,
+    /// The proportional set size (PSS): the private memory of a process, and
+    /// of each shared page the part that is equal for each process that uses
+    /// the page. The sum for more than one process counts no page two times.
+    Proportional = 1,
+    /// The resident set size (RSS): each page of a process that is in memory.
+    /// The sum for more than one process counts a shared page one time for
+    /// each process that uses it.
+    Resident = 2,
+}
+impl MemoryMeasure {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "MEMORY_MEASURE_UNSPECIFIED",
+            Self::Proportional => "MEMORY_MEASURE_PROPORTIONAL",
+            Self::Resident => "MEMORY_MEASURE_RESIDENT",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "MEMORY_MEASURE_UNSPECIFIED" => Some(Self::Unspecified),
+            "MEMORY_MEASURE_PROPORTIONAL" => Some(Self::Proportional),
+            "MEMORY_MEASURE_RESIDENT" => Some(Self::Resident),
+            _ => None,
+        }
+    }
+}
 /// The failure result of a request.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Error {
@@ -774,7 +846,7 @@ pub struct Request {
     /// number plan at the top of this file.
     #[prost(
         oneof = "request::Body",
-        tags = "100, 200, 201, 300, 301, 302, 303, 304, 305, 306, 307, 308, 309, 400, 401, 402, 403, 404, 405"
+        tags = "100, 200, 201, 300, 301, 302, 303, 304, 305, 306, 307, 308, 309, 310, 400, 401, 402, 403, 404, 405"
     )]
     pub body: ::core::option::Option<request::Body>,
 }
@@ -823,6 +895,9 @@ pub mod request {
         /// Session.SetRestorePolicy.
         #[prost(message, tag = "309")]
         SessionSetRestorePolicy(super::SessionSetRestorePolicyRequest),
+        /// Session.Memory.
+        #[prost(message, tag = "310")]
+        SessionMemory(super::SessionMemoryRequest),
         /// Ext.List.
         #[prost(message, tag = "400")]
         ExtList(super::ExtListRequest),
@@ -853,7 +928,7 @@ pub struct Response {
     /// the field number plan at the top of this file.
     #[prost(
         oneof = "response::Result",
-        tags = "2, 100, 200, 201, 300, 301, 302, 303, 304, 305, 306, 307, 308, 309, 400, 401, 402, 403, 404, 405"
+        tags = "2, 100, 200, 201, 300, 301, 302, 303, 304, 305, 306, 307, 308, 309, 310, 400, 401, 402, 403, 404, 405"
     )]
     pub result: ::core::option::Option<response::Result>,
 }
@@ -906,6 +981,9 @@ pub mod response {
         /// Session.SetRestorePolicy.
         #[prost(message, tag = "309")]
         SessionSetRestorePolicy(super::SessionSetRestorePolicyResponse),
+        /// Session.Memory.
+        #[prost(message, tag = "310")]
+        SessionMemory(super::SessionMemoryResponse),
         /// Ext.List.
         #[prost(message, tag = "400")]
         ExtList(super::ExtListResponse),

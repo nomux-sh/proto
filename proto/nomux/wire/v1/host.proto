@@ -22,6 +22,19 @@ message HostInfoResponse {
   uint32 daemon_pid = 2;
   // The number of Sessions that the daemon knows.
   uint32 session_count = 3;
+  // If the operating system applies a memory limit to a Session. Absent
+  // from a daemon that is older than the field.
+  MemoryLimitSupport memory_limit = 4;
+}
+
+// What the daemon can do with a memory limit of a Session.
+message MemoryLimitSupport {
+  // True if the operating system ends the processes of a Session at its
+  // memory limit. False if the limit is only a threshold for hibernation.
+  bool applied = 1;
+  // How the limit is applied, or why the operating system applies none, in
+  // English for the user.
+  string detail = 2;
 }
 
 // Host.Stop: tells the daemon to stop. No Session ends: the holders

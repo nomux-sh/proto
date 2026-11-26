@@ -112,6 +112,10 @@ message Request {
     SessionSetRestorePolicyRequest session_set_restore_policy = 309;
     // Session.Memory.
     SessionMemoryRequest session_memory = 310;
+    // Session.Hibernate.
+    SessionHibernateRequest session_hibernate = 311;
+    // Session.SetPinned.
+    SessionSetPinnedRequest session_set_pinned = 312;
     // Ext.List.
     ExtListRequest ext_list = 400;
     // Ext.Inspect.
@@ -193,6 +197,10 @@ message Response {
     SessionSetRestorePolicyResponse session_set_restore_policy = 309;
     // Session.Memory.
     SessionMemoryResponse session_memory = 310;
+    // Session.Hibernate.
+    SessionHibernateResponse session_hibernate = 311;
+    // Session.SetPinned.
+    SessionSetPinnedResponse session_set_pinned = 312;
     // Ext.List.
     ExtListResponse ext_list = 400;
     // Ext.Inspect.
@@ -250,6 +258,14 @@ message Event {
   // Each service adds its events here, with numbers of its block of the
   // field number plan at the top of this file.
   oneof body {
+    // Session: the daemon hibernated a Session.
+    SessionHibernated session_hibernated = 300;
+    // Session: a wake started the resume command of a Session.
+    SessionWoken session_woken = 301;
+    // Session: a wake of a Session failed.
+    SessionWakeFailed session_wake_failed = 302;
+    // Session: the operating system ended a Session at its memory limit.
+    SessionMemoryLimitReached session_memory_limit_reached = 303;
     // Ext: an extension sent an event.
     ExtensionEvent extension_event = 400;
     // Agent: the status of a Session changed.

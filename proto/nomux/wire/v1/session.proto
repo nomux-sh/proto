@@ -102,6 +102,58 @@ message Session {
   // the field. A client matches the Session with a Project by this value if
   // it is not empty, else by `working_directory`: spec/workspace.md.
   string resolved_working_directory = 13;
+  // The hibernation of the Session. Present while the Session is
+  // hibernated, and while its command is the resumed run of the last
+  // hibernation. Absent if the Session never hibernated, and after a restore
+  // that started the command of the Session instead of the resume command.
+  // A hibernated Session has the state `SESSION_STATE_DORMANT`:
+  // spec/control.md, "Hibernation".
+  SessionHibernation hibernation = 14;
+  // The user excluded the Session from automatic hibernation.
+  bool pinned = 15;
+}
+
+// Why the daemon hibernated a Session.
+enum HibernationReason {
+  // The sender did not set the field. The client treats the reason as
+  // unknown.
+  HIBERNATION_REASON_UNSPECIFIED = 0;
+  // More agents were live than the limit of the configuration.
+  HIBERNATION_REASON_COUNT = 1;
+  // The processes of the Session used more memory than the limit for one
+  // Session, and the operating system applies no limit to the Session.
+  HIBERNATION_REASON_SESSION_MEMORY = 2;
+  // The processes of all Sessions used more memory than the limit for all
+  // Sessions.
+  HIBERNATION_REASON_TOTAL_MEMORY = 3;
+  // The operating system reported memory pressure on the Host.
+  HIBERNATION_REASON_MEMORY_PRESSURE = 4;
+  // A client asked for it: `SessionHibernateRequest`.
+  HIBERNATION_REASON_REQUEST = 5;
+}
+
+// The last hibernation of a Session.
+message SessionHibernation {
+  // When the daemon stopped the command: seconds after the Unix epoch.
+  uint64 hibernated_at = 1;
+  // Why the daemon stopped the command.
+  HibernationReason reason = 2;
+  // The memory of the process tree of the command just before the stop, in
+  // bytes: the memory that the hibernation gave back. 0 if the daemon could
+  // not measure it.
+  uint64 freed_bytes = 3;
+  // How the daemon measured `freed_bytes`.
+  MemoryMeasure measure = 4;
+  // The command that a wake starts, as the adapter reported it in
+  // `AgentDetails.resume_command`.
+  string resume_command = 5;
+  // When a wake started `resume_command`: seconds after the Unix epoch. 0
+  // while the Session is hibernated. If it is not 0, the command of the
+  // Session is the resumed run.
+  uint64 woken_at = 6;
+  // Why the last wake failed, in English for the user. Empty if no wake
+  // failed since the hibernation.
+  string wake_error = 7;
 }
 
 // Session.Create: starts a new Session.
@@ -302,6 +354,9 @@ message SessionMemory {
   uint64 holder_bytes = 4;
   // How the daemon measured `command_bytes` and `holder_bytes`.
   MemoryMeasure measure = 5;
+  // The memory limit that the operating system applies to the processes of
+  // the command, in bytes. 0 if no such limit applies.
+  uint64 limit_bytes = 6;
 }
 
 // Session.Memory: asks for the memory that the processes of each Session
@@ -314,4 +369,93 @@ message SessionMemoryResponse {
   // One entry for each Session that has a holder, in the sequence of the
   // identifiers. A Session without a process has no entry.
   repeated SessionMemory sessions = 1;
+}
+
+// Session.Hibernate: stops the command of an agent Session that can resume,
+// and keeps the Session as a hibernated Session. spec/control.md has the
+// conditions.
+message SessionHibernateRequest {
+  // The identifier of the Session.
+  string id = 1;
+}
+
+// The reply to `SessionHibernateRequest`. The daemon answers after the
+// command of the Session has ended.
+message SessionHibernateResponse {
+  // The Session after the hibernation.
+  Session session = 1;
+}
+
+// Session.SetPinned: excludes a Session from automatic hibernation, or
+// takes the exclusion back.
+message SessionSetPinnedRequest {
+  // The identifier of the Session.
+  string id = 1;
+  // If the value is true, the daemon does not hibernate the Session for a
+  // trigger of the configuration.
+  bool pinned = 2;
+}
+
+// The reply to `SessionSetPinnedRequest`.
+message SessionSetPinnedResponse {}
+
+// Event: the daemon hibernated a Session. The fields of the trigger are set
+// only for its reason.
+message SessionHibernated {
+  // The identifier of the Session.
+  string session_id = 1;
+  // Why the daemon hibernated the Session.
+  HibernationReason reason = 2;
+  // The memory that the hibernation gave back, as in
+  // `SessionHibernation.freed_bytes`.
+  uint64 freed_bytes = 3;
+  // How the daemon measured `freed_bytes` and `memory_bytes`.
+  MemoryMeasure measure = 4;
+  // `HIBERNATION_REASON_COUNT`: the number of live agents before the
+  // hibernation.
+  uint32 live_agents = 5;
+  // `HIBERNATION_REASON_COUNT`: the limit of live agents.
+  uint32 max_live_agents = 6;
+  // `HIBERNATION_REASON_SESSION_MEMORY` and
+  // `HIBERNATION_REASON_TOTAL_MEMORY`: the memory that the daemon measured,
+  // in bytes: of the Session, or of all Sessions.
+  uint64 memory_bytes = 7;
+  // `HIBERNATION_REASON_SESSION_MEMORY` and
+  // `HIBERNATION_REASON_TOTAL_MEMORY`: the limit, in bytes.
+  uint64 memory_limit_bytes = 8;
+  // `HIBERNATION_REASON_MEMORY_PRESSURE`: the time in milliseconds that
+  // processes waited for memory, in the window below, that made the
+  // operating system report the pressure.
+  uint32 pressure_stall_ms = 9;
+  // `HIBERNATION_REASON_MEMORY_PRESSURE`: the window of the measurement, in
+  // milliseconds.
+  uint32 pressure_window_ms = 10;
+}
+
+// Event: a wake started the resume command of a hibernated Session.
+message SessionWoken {
+  // The identifier of the Session.
+  string session_id = 1;
+  // The command that the wake started.
+  string resume_command = 2;
+}
+
+// Event: a wake of a hibernated Session failed. The Session stays
+// hibernated.
+message SessionWakeFailed {
+  // The identifier of the Session.
+  string session_id = 1;
+  // Why the wake failed, in English for the user.
+  string error = 2;
+  // The command that the wake tried to start. The user can run it by hand.
+  string resume_command = 3;
+}
+
+// Event: the operating system ended the command of a Session, because its
+// processes reached the memory limit of the Session.
+message SessionMemoryLimitReached {
+  // The identifier of the Session.
+  string session_id = 1;
+  // The memory limit of the Session, in bytes.
+  uint64 limit_bytes = 2;
 }

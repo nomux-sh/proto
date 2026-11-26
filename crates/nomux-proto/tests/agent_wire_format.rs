@@ -148,6 +148,7 @@ fn agent_state_and_kind_values_are_stable() {
     assert_eq!(NeedsYouKind::Permission as i32, 1);
     assert_eq!(NeedsYouKind::Question as i32, 2);
     assert_eq!(NeedsYouKind::Auth as i32, 3);
+    assert_eq!(NeedsYouKind::Prompt as i32, 4);
 }
 
 #[test]
@@ -168,6 +169,11 @@ fn event_type_values_are_stable() {
     assert_eq!(EventType::AgentRunChanged as i32, 1);
     assert_eq!(EventType::AgentRunRemoved as i32, 2);
     assert_eq!(EventType::ExtensionEvent as i32, 3);
+    assert_eq!(EventType::WorkspaceChanged as i32, 4);
+    assert_eq!(EventType::SessionHibernated as i32, 5);
+    assert_eq!(EventType::SessionWoken as i32, 6);
+    assert_eq!(EventType::SessionWakeFailed as i32, 7);
+    assert_eq!(EventType::SessionMemoryLimitReached as i32, 8);
 }
 
 #[test]

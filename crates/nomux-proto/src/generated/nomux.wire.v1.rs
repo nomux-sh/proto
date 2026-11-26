@@ -86,7 +86,12 @@ pub struct AgentDetails {
     #[prost(string, tag = "2")]
     pub provider_session_id: ::prost::alloc::string::String,
     /// A command that continues the session of the agent tool. It has no
-    /// prompt and no secret.
+    /// prompt and no secret. It is words with the quoting of a POSIX shell: a
+    /// word can be in single or double quotes, and a backslash quotes the next
+    /// character. It has no expansion, no substitution and no operator, thus no
+    /// unquoted `;`, `|`, `&`, `<`, `>`, `(`, `)`, `$`, `` ` ``, `*`, `?`, `[`,
+    /// `#`, `~` and no line break. The daemon never gives the command to a
+    /// shell: spec/control.md, "Hibernation".
     #[prost(string, tag = "3")]
     pub resume_command: ::prost::alloc::string::String,
 }
@@ -276,6 +281,10 @@ pub enum NeedsYouKind {
     Question = 2,
     /// The user must give a login, a token or a credential.
     Auth = 3,
+    /// The agent waits at its input prompt for the next instruction. Nothing
+    /// that the agent asked for is pending, thus a resume of the agent loses
+    /// nothing.
+    Prompt = 4,
 }
 impl NeedsYouKind {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -288,6 +297,7 @@ impl NeedsYouKind {
             Self::Permission => "NEEDS_YOU_KIND_PERMISSION",
             Self::Question => "NEEDS_YOU_KIND_QUESTION",
             Self::Auth => "NEEDS_YOU_KIND_AUTH",
+            Self::Prompt => "NEEDS_YOU_KIND_PROMPT",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -297,6 +307,7 @@ impl NeedsYouKind {
             "NEEDS_YOU_KIND_PERMISSION" => Some(Self::Permission),
             "NEEDS_YOU_KIND_QUESTION" => Some(Self::Question),
             "NEEDS_YOU_KIND_AUTH" => Some(Self::Auth),
+            "NEEDS_YOU_KIND_PROMPT" => Some(Self::Prompt),
             _ => None,
         }
     }
@@ -617,6 +628,14 @@ pub enum EventType {
     ExtensionEvent = 3,
     /// `WorkspaceChanged`.
     WorkspaceChanged = 4,
+    /// `SessionHibernated`.
+    SessionHibernated = 5,
+    /// `SessionWoken`.
+    SessionWoken = 6,
+    /// `SessionWakeFailed`.
+    SessionWakeFailed = 7,
+    /// `SessionMemoryLimitReached`.
+    SessionMemoryLimitReached = 8,
 }
 impl EventType {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -630,6 +649,10 @@ impl EventType {
             Self::AgentRunRemoved => "EVENT_TYPE_AGENT_RUN_REMOVED",
             Self::ExtensionEvent => "EVENT_TYPE_EXTENSION_EVENT",
             Self::WorkspaceChanged => "EVENT_TYPE_WORKSPACE_CHANGED",
+            Self::SessionHibernated => "EVENT_TYPE_SESSION_HIBERNATED",
+            Self::SessionWoken => "EVENT_TYPE_SESSION_WOKEN",
+            Self::SessionWakeFailed => "EVENT_TYPE_SESSION_WAKE_FAILED",
+            Self::SessionMemoryLimitReached => "EVENT_TYPE_SESSION_MEMORY_LIMIT_REACHED",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -640,6 +663,12 @@ impl EventType {
             "EVENT_TYPE_AGENT_RUN_REMOVED" => Some(Self::AgentRunRemoved),
             "EVENT_TYPE_EXTENSION_EVENT" => Some(Self::ExtensionEvent),
             "EVENT_TYPE_WORKSPACE_CHANGED" => Some(Self::WorkspaceChanged),
+            "EVENT_TYPE_SESSION_HIBERNATED" => Some(Self::SessionHibernated),
+            "EVENT_TYPE_SESSION_WOKEN" => Some(Self::SessionWoken),
+            "EVENT_TYPE_SESSION_WAKE_FAILED" => Some(Self::SessionWakeFailed),
+            "EVENT_TYPE_SESSION_MEMORY_LIMIT_REACHED" => {
+                Some(Self::SessionMemoryLimitReached)
+            }
             _ => None,
         }
     }
@@ -1116,6 +1145,22 @@ pub struct HostInfoResponse {
     /// The number of Sessions that the daemon knows.
     #[prost(uint32, tag = "3")]
     pub session_count: u32,
+    /// If the operating system applies a memory limit to a Session. Absent
+    /// from a daemon that is older than the field.
+    #[prost(message, optional, tag = "4")]
+    pub memory_limit: ::core::option::Option<MemoryLimitSupport>,
+}
+/// What the daemon can do with a memory limit of a Session.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct MemoryLimitSupport {
+    /// True if the operating system ends the processes of a Session at its
+    /// memory limit. False if the limit is only a threshold for hibernation.
+    #[prost(bool, tag = "1")]
+    pub applied: bool,
+    /// How the limit is applied, or why the operating system applies none, in
+    /// English for the user.
+    #[prost(string, tag = "2")]
+    pub detail: ::prost::alloc::string::String,
 }
 /// Host.Stop: tells the daemon to stop. No Session ends: the holders
 /// continue, and the next daemon finds them.
@@ -1207,6 +1252,48 @@ pub struct Session {
     /// it is not empty, else by `working_directory`: spec/workspace.md.
     #[prost(string, tag = "13")]
     pub resolved_working_directory: ::prost::alloc::string::String,
+    /// The hibernation of the Session. Present while the Session is
+    /// hibernated, and while its command is the resumed run of the last
+    /// hibernation. Absent if the Session never hibernated, and after a restore
+    /// that started the command of the Session instead of the resume command.
+    /// A hibernated Session has the state `SESSION_STATE_DORMANT`:
+    /// spec/control.md, "Hibernation".
+    #[prost(message, optional, tag = "14")]
+    pub hibernation: ::core::option::Option<SessionHibernation>,
+    /// The user excluded the Session from automatic hibernation.
+    #[prost(bool, tag = "15")]
+    pub pinned: bool,
+}
+/// The last hibernation of a Session.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SessionHibernation {
+    /// When the daemon stopped the command: seconds after the Unix epoch.
+    #[prost(uint64, tag = "1")]
+    pub hibernated_at: u64,
+    /// Why the daemon stopped the command.
+    #[prost(enumeration = "HibernationReason", tag = "2")]
+    pub reason: i32,
+    /// The memory of the process tree of the command just before the stop, in
+    /// bytes: the memory that the hibernation gave back. 0 if the daemon could
+    /// not measure it.
+    #[prost(uint64, tag = "3")]
+    pub freed_bytes: u64,
+    /// How the daemon measured `freed_bytes`.
+    #[prost(enumeration = "MemoryMeasure", tag = "4")]
+    pub measure: i32,
+    /// The command that a wake starts, as the adapter reported it in
+    /// `AgentDetails.resume_command`.
+    #[prost(string, tag = "5")]
+    pub resume_command: ::prost::alloc::string::String,
+    /// When a wake started `resume_command`: seconds after the Unix epoch. 0
+    /// while the Session is hibernated. If it is not 0, the command of the
+    /// Session is the resumed run.
+    #[prost(uint64, tag = "6")]
+    pub woken_at: u64,
+    /// Why the last wake failed, in English for the user. Empty if no wake
+    /// failed since the hibernation.
+    #[prost(string, tag = "7")]
+    pub wake_error: ::prost::alloc::string::String,
 }
 /// Session.Create: starts a new Session.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -1428,6 +1515,10 @@ pub struct SessionMemory {
     /// How the daemon measured `command_bytes` and `holder_bytes`.
     #[prost(enumeration = "MemoryMeasure", tag = "5")]
     pub measure: i32,
+    /// The memory limit that the operating system applies to the processes of
+    /// the command, in bytes. 0 if no such limit applies.
+    #[prost(uint64, tag = "6")]
+    pub limit_bytes: u64,
 }
 /// Session.Memory: asks for the memory that the processes of each Session
 /// use. The daemon measures the memory for this request: it keeps no value
@@ -1441,6 +1532,116 @@ pub struct SessionMemoryResponse {
     /// identifiers. A Session without a process has no entry.
     #[prost(message, repeated, tag = "1")]
     pub sessions: ::prost::alloc::vec::Vec<SessionMemory>,
+}
+/// Session.Hibernate: stops the command of an agent Session that can resume,
+/// and keeps the Session as a hibernated Session. spec/control.md has the
+/// conditions.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SessionHibernateRequest {
+    /// The identifier of the Session.
+    #[prost(string, tag = "1")]
+    pub id: ::prost::alloc::string::String,
+}
+/// The reply to `SessionHibernateRequest`. The daemon answers after the
+/// command of the Session has ended.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SessionHibernateResponse {
+    /// The Session after the hibernation.
+    #[prost(message, optional, tag = "1")]
+    pub session: ::core::option::Option<Session>,
+}
+/// Session.SetPinned: excludes a Session from automatic hibernation, or
+/// takes the exclusion back.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SessionSetPinnedRequest {
+    /// The identifier of the Session.
+    #[prost(string, tag = "1")]
+    pub id: ::prost::alloc::string::String,
+    /// If the value is true, the daemon does not hibernate the Session for a
+    /// trigger of the configuration.
+    #[prost(bool, tag = "2")]
+    pub pinned: bool,
+}
+/// The reply to `SessionSetPinnedRequest`.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SessionSetPinnedResponse {}
+/// Event: the daemon hibernated a Session. The fields of the trigger are set
+/// only for its reason.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SessionHibernated {
+    /// The identifier of the Session.
+    #[prost(string, tag = "1")]
+    pub session_id: ::prost::alloc::string::String,
+    /// Why the daemon hibernated the Session.
+    #[prost(enumeration = "HibernationReason", tag = "2")]
+    pub reason: i32,
+    /// The memory that the hibernation gave back, as in
+    /// `SessionHibernation.freed_bytes`.
+    #[prost(uint64, tag = "3")]
+    pub freed_bytes: u64,
+    /// How the daemon measured `freed_bytes` and `memory_bytes`.
+    #[prost(enumeration = "MemoryMeasure", tag = "4")]
+    pub measure: i32,
+    /// `HIBERNATION_REASON_COUNT`: the number of live agents before the
+    /// hibernation.
+    #[prost(uint32, tag = "5")]
+    pub live_agents: u32,
+    /// `HIBERNATION_REASON_COUNT`: the limit of live agents.
+    #[prost(uint32, tag = "6")]
+    pub max_live_agents: u32,
+    /// `HIBERNATION_REASON_SESSION_MEMORY` and
+    /// `HIBERNATION_REASON_TOTAL_MEMORY`: the memory that the daemon measured,
+    /// in bytes: of the Session, or of all Sessions.
+    #[prost(uint64, tag = "7")]
+    pub memory_bytes: u64,
+    /// `HIBERNATION_REASON_SESSION_MEMORY` and
+    /// `HIBERNATION_REASON_TOTAL_MEMORY`: the limit, in bytes.
+    #[prost(uint64, tag = "8")]
+    pub memory_limit_bytes: u64,
+    /// `HIBERNATION_REASON_MEMORY_PRESSURE`: the time in milliseconds that
+    /// processes waited for memory, in the window below, that made the
+    /// operating system report the pressure.
+    #[prost(uint32, tag = "9")]
+    pub pressure_stall_ms: u32,
+    /// `HIBERNATION_REASON_MEMORY_PRESSURE`: the window of the measurement, in
+    /// milliseconds.
+    #[prost(uint32, tag = "10")]
+    pub pressure_window_ms: u32,
+}
+/// Event: a wake started the resume command of a hibernated Session.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SessionWoken {
+    /// The identifier of the Session.
+    #[prost(string, tag = "1")]
+    pub session_id: ::prost::alloc::string::String,
+    /// The command that the wake started.
+    #[prost(string, tag = "2")]
+    pub resume_command: ::prost::alloc::string::String,
+}
+/// Event: a wake of a hibernated Session failed. The Session stays
+/// hibernated.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SessionWakeFailed {
+    /// The identifier of the Session.
+    #[prost(string, tag = "1")]
+    pub session_id: ::prost::alloc::string::String,
+    /// Why the wake failed, in English for the user.
+    #[prost(string, tag = "2")]
+    pub error: ::prost::alloc::string::String,
+    /// The command that the wake tried to start. The user can run it by hand.
+    #[prost(string, tag = "3")]
+    pub resume_command: ::prost::alloc::string::String,
+}
+/// Event: the operating system ended the command of a Session, because its
+/// processes reached the memory limit of the Session.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SessionMemoryLimitReached {
+    /// The identifier of the Session.
+    #[prost(string, tag = "1")]
+    pub session_id: ::prost::alloc::string::String,
+    /// The memory limit of the Session, in bytes.
+    #[prost(uint64, tag = "2")]
+    pub limit_bytes: u64,
 }
 /// The state of a Session, as the daemon knows it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
@@ -1525,6 +1726,54 @@ impl RestorePolicy {
             "RESTORE_POLICY_AUTO" => Some(Self::Auto),
             "RESTORE_POLICY_ON_FOCUS" => Some(Self::OnFocus),
             "RESTORE_POLICY_MANUAL" => Some(Self::Manual),
+            _ => None,
+        }
+    }
+}
+/// Why the daemon hibernated a Session.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum HibernationReason {
+    /// The sender did not set the field. The client treats the reason as
+    /// unknown.
+    Unspecified = 0,
+    /// More agents were live than the limit of the configuration.
+    Count = 1,
+    /// The processes of the Session used more memory than the limit for one
+    /// Session, and the operating system applies no limit to the Session.
+    SessionMemory = 2,
+    /// The processes of all Sessions used more memory than the limit for all
+    /// Sessions.
+    TotalMemory = 3,
+    /// The operating system reported memory pressure on the Host.
+    MemoryPressure = 4,
+    /// A client asked for it: `SessionHibernateRequest`.
+    Request = 5,
+}
+impl HibernationReason {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "HIBERNATION_REASON_UNSPECIFIED",
+            Self::Count => "HIBERNATION_REASON_COUNT",
+            Self::SessionMemory => "HIBERNATION_REASON_SESSION_MEMORY",
+            Self::TotalMemory => "HIBERNATION_REASON_TOTAL_MEMORY",
+            Self::MemoryPressure => "HIBERNATION_REASON_MEMORY_PRESSURE",
+            Self::Request => "HIBERNATION_REASON_REQUEST",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "HIBERNATION_REASON_UNSPECIFIED" => Some(Self::Unspecified),
+            "HIBERNATION_REASON_COUNT" => Some(Self::Count),
+            "HIBERNATION_REASON_SESSION_MEMORY" => Some(Self::SessionMemory),
+            "HIBERNATION_REASON_TOTAL_MEMORY" => Some(Self::TotalMemory),
+            "HIBERNATION_REASON_MEMORY_PRESSURE" => Some(Self::MemoryPressure),
+            "HIBERNATION_REASON_REQUEST" => Some(Self::Request),
             _ => None,
         }
     }
@@ -1847,7 +2096,7 @@ pub struct Request {
     /// number plan at the top of this file.
     #[prost(
         oneof = "request::Body",
-        tags = "100, 200, 201, 300, 301, 302, 303, 304, 305, 306, 307, 308, 309, 310, 400, 401, 402, 403, 404, 405, 500, 501, 502, 600, 700, 701, 702, 800, 801, 802, 803, 804, 805, 806"
+        tags = "100, 200, 201, 300, 301, 302, 303, 304, 305, 306, 307, 308, 309, 310, 311, 312, 400, 401, 402, 403, 404, 405, 500, 501, 502, 600, 700, 701, 702, 800, 801, 802, 803, 804, 805, 806"
     )]
     pub body: ::core::option::Option<request::Body>,
 }
@@ -1899,6 +2148,12 @@ pub mod request {
         /// Session.Memory.
         #[prost(message, tag = "310")]
         SessionMemory(super::SessionMemoryRequest),
+        /// Session.Hibernate.
+        #[prost(message, tag = "311")]
+        SessionHibernate(super::SessionHibernateRequest),
+        /// Session.SetPinned.
+        #[prost(message, tag = "312")]
+        SessionSetPinned(super::SessionSetPinnedRequest),
         /// Ext.List.
         #[prost(message, tag = "400")]
         ExtList(super::ExtListRequest),
@@ -1971,7 +2226,7 @@ pub struct Response {
     /// the field number plan at the top of this file.
     #[prost(
         oneof = "response::Result",
-        tags = "2, 100, 200, 201, 300, 301, 302, 303, 304, 305, 306, 307, 308, 309, 310, 400, 401, 402, 403, 404, 405, 500, 501, 502, 600, 700, 701, 702, 800, 801, 802, 803, 804, 805, 806"
+        tags = "2, 100, 200, 201, 300, 301, 302, 303, 304, 305, 306, 307, 308, 309, 310, 311, 312, 400, 401, 402, 403, 404, 405, 500, 501, 502, 600, 700, 701, 702, 800, 801, 802, 803, 804, 805, 806"
     )]
     pub result: ::core::option::Option<response::Result>,
 }
@@ -2027,6 +2282,12 @@ pub mod response {
         /// Session.Memory.
         #[prost(message, tag = "310")]
         SessionMemory(super::SessionMemoryResponse),
+        /// Session.Hibernate.
+        #[prost(message, tag = "311")]
+        SessionHibernate(super::SessionHibernateResponse),
+        /// Session.SetPinned.
+        #[prost(message, tag = "312")]
+        SessionSetPinned(super::SessionSetPinnedResponse),
         /// Ext.List.
         #[prost(message, tag = "400")]
         ExtList(super::ExtListResponse),
@@ -2105,7 +2366,7 @@ pub struct Event {
     /// What occurred. A client ignores an event whose body it does not know.
     /// Each service adds its events here, with numbers of its block of the
     /// field number plan at the top of this file.
-    #[prost(oneof = "event::Body", tags = "400, 500, 501, 600, 800")]
+    #[prost(oneof = "event::Body", tags = "300, 301, 302, 303, 400, 500, 501, 600, 800")]
     pub body: ::core::option::Option<event::Body>,
 }
 /// Nested message and enum types in `Event`.
@@ -2115,6 +2376,18 @@ pub mod event {
     /// field number plan at the top of this file.
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Body {
+        /// Session: the daemon hibernated a Session.
+        #[prost(message, tag = "300")]
+        SessionHibernated(super::SessionHibernated),
+        /// Session: a wake started the resume command of a Session.
+        #[prost(message, tag = "301")]
+        SessionWoken(super::SessionWoken),
+        /// Session: a wake of a Session failed.
+        #[prost(message, tag = "302")]
+        SessionWakeFailed(super::SessionWakeFailed),
+        /// Session: the operating system ended a Session at its memory limit.
+        #[prost(message, tag = "303")]
+        SessionMemoryLimitReached(super::SessionMemoryLimitReached),
         /// Ext: an extension sent an event.
         #[prost(message, tag = "400")]
         ExtensionEvent(super::ExtensionEvent),
